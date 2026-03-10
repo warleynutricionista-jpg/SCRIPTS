@@ -1,0 +1,17 @@
+{
+    "hack_atm_label": "Hackear ATM",
+    "drill_atm_label": "Taladrar ATM",
+    "rope_atm_label": "Atar Cuerda al ATM",
+    "pick_up_cash": "Recoger Dinero",
+    "dispatch_message": "Robo de ATM en progreso ",
+    "wait_robbery": "Necesitas esperar antes de intentar otro robo.",
+    "not_enough_police": "No hay suficiente policía en la ciudad",
+    "failed_robbery": "Has fallado el intento de robo.",
+    "server_pickup_cash": "Recogiste %s $",
+    "rope_attached": "Cuerda atada al ATM y al vehículo más cercano. Conduce el vehículo para tirar del ATM.",
+    "rope_vehicle_attached": "Cuerda atada al vehículo. Conduce para tirar del ATM.",
+    "atm_detached": "¡El ATM ha sido arrancado! Ahora puedes robarlo.",
+    "rob_detached_atm": "Robar ATM Desprendido",
+    "no_vehicle_nearby": "No hay vehículo cerca para atar la cuerda.",
+    "rope_robbery_failed": "Robo con cuerda fallido. El ATM sigue seguro."
+}

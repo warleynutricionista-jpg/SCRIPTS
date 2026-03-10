@@ -1,0 +1,17 @@
+{
+    "hack_atm_label": "ATM hacken",
+    "drill_atm_label": "ATM bohren",
+    "rope_atm_label": "Seil an ATM befestigen",
+    "pick_up_cash": "Geld aufheben",
+    "dispatch_message": "ATM-Raub läuft ",
+    "wait_robbery": "Sie müssen warten, bevor Sie einen weiteren Raub versuchen.",
+    "not_enough_police": "Nicht genug Polizei in der Stadt",
+    "failed_robbery": "Der Raubversuch ist fehlgeschlagen.",
+    "server_pickup_cash": "Sie haben %s $ aufgehoben",
+    "rope_attached": "Seil an ATM und nächstgelegenes Fahrzeug befestigt. Fahren Sie das Fahrzeug, um den ATM zu ziehen.",
+    "rope_vehicle_attached": "Seil an Fahrzeug befestigt. Fahren Sie, um den ATM zu ziehen.",
+    "atm_detached": "ATM wurde losgerissen! Sie können ihn jetzt ausrauben.",
+    "rob_detached_atm": "Losgerissenen ATM ausrauben",
+    "no_vehicle_nearby": "Kein Fahrzeug in der Nähe, um das Seil zu befestigen.",
+    "rope_robbery_failed": "Seil-Raub fehlgeschlagen. Der ATM ist noch sicher."
+}

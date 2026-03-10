@@ -1,0 +1,18 @@
+{
+    "hack_atm_label": "Hackerare il Bancomat",
+    "drill_atm_label": "Trapanare il Bancomat",
+    "rope_atm_label": "Attaccare la Corda al Bancomat",
+    "pick_up_cash": "Raccogliere Contanti",
+    "dispatch_message": "Rapina al bancomat in corso ",
+    "wait_robbery": "Devi aspettare prima di tentare un'altra rapina.",
+    "not_enough_police": "Non ci sono abbastanza poliziotti in città",
+    "failed_robbery": "Hai fallito il tentativo di rapina.",
+    "server_pickup_cash": "Hai raccolto %s $",
+    "rope_attached": "Corda attaccata al bancomat e al veicolo più vicino. Guida il veicolo per tirare il bancomat.",
+    "rope_vehicle_attached": "Corda attaccata al veicolo. Guida per tirare il bancomat.",
+    "atm_detached": "Il bancomat è stato strappato! Ora puoi rapinarlo.",
+    "rob_detached_atm": "Rapinare il Bancomat Staccato",
+    "no_vehicle_nearby": "Nessun veicolo nelle vicinanze per attaccare la corda.",
+    "rope_robbery_failed": "Rapina con corda fallita. Il bancomat è ancora sicuro."
+}
+

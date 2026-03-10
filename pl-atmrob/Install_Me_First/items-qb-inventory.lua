@@ -1,0 +1,3 @@
+['pl_hackingdevice'] = {['name'] = 'pl_hackingdevice', ['label'] = 'Hacking Device', ['weight'] = 10, ['type'] = 'item', ['image'] = 'pl_hackingdevice.png', ['unique'] = false, ['useable'] = false, ['shouldClose'] = true, ['combinable'] = nil, ['description'] = ''},
+['pl_drill'] = {['name'] = 'pl_drill', ['label'] = 'Drill', ['weight'] = 10, ['type'] = 'item', ['image'] = 'pl_drill.png', ['unique'] = false, ['useable'] = true, ['shouldClose'] = true, ['combinable'] = nil, ['description'] = ''},
+['pl_rope'] = {['name'] = 'pl_rope', ['label'] = 'Rope', ['weight'] = 10, ['type'] = 'item', ['image'] = 'pl_rope.png', ['unique'] = false, ['useable'] = true, ['shouldClose'] = true, ['combinable'] = nil, ['description'] = ''},

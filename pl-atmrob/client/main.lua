@@ -26,10 +26,19 @@ function MarkATMAsRobbed(atmCoords)
     table.insert(robbedATMCoords, atmCoords)
 end
 
-local targetResource = Utils.GetTarget()
+local targetResource
+local targetsRegistered = false
 
-for _, model in ipairs(Config.AtmModels) do
-    if targetResource == 'ox_target' then
+local function RegisterAtmTargets()
+    if targetsRegistered then return true end
+
+    targetResource = Utils.GetTarget()
+    if not targetResource then
+        return false
+    end
+
+    for _, model in ipairs(Config.AtmModels) do
+        if targetResource == 'ox_target' then
         local options = {}
 
         local function canInteractGeneric(entity, action)
@@ -83,10 +92,10 @@ for _, model in ipairs(Config.AtmModels) do
             })
         end
 
-        exports.ox_target:addModel(model, options)
+            exports.ox_target:addModel(model, options)
 
-    elseif targetResource == 'qb-target' then
-        local options = {}
+        elseif targetResource == 'qb-target' then
+            local options = {}
 
         local function canInteractGeneric(entity, action)
             for _, st in pairs(ropeAttachedATMs) do
@@ -139,12 +148,33 @@ for _, model in ipairs(Config.AtmModels) do
             })
         end
 
-        exports['qb-target']:AddTargetModel(model, {
-            options = options,
-            distance = 1.0
-        })
+            exports['qb-target']:AddTargetModel(model, {
+                options = options,
+                distance = 1.0
+            })
+        end
     end
+
+    targetsRegistered = true
+    return true
 end
+
+CreateThread(function()
+    while not RegisterAtmTargets() do
+        Wait(1000)
+    end
+end)
+
+AddEventHandler('onClientResourceStart', function(resourceName)
+    if resourceName == GetCurrentResourceName() then
+        RegisterAtmTargets()
+        return
+    end
+
+    if not targetsRegistered and (resourceName == 'ox_target' or resourceName == 'qb-target') then
+        RegisterAtmTargets()
+    end
+end)
 
 function AddCashToTarget(cash, atmCoords)
     if targetResource == 'qb-target' then

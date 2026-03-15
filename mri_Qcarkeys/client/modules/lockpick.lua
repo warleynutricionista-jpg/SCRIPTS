@@ -18,6 +18,43 @@ function LockPick:Minigame()
     end
 end
 
+
+function LockPick:IsIgnitionJammed(vehicle)
+    local engineHealth = GetVehicleEngineHealth(vehicle)
+    return engineHealth <= Shared.ignition.jammedThreshold
+end
+
+function LockPick:ApplyIgnitionFailureDamage(vehicle)
+    local damage = math.random() * (Shared.ignition.failDamageMax - Shared.ignition.failDamageMin) + Shared.ignition.failDamageMin
+    local newHealth = math.max(0.0, GetVehicleEngineHealth(vehicle) - damage)
+    SetVehicleEngineHealth(vehicle, newHealth)
+    if newHealth <= Shared.ignition.jammedThreshold then
+        lib.notify({
+            title = 'Ignição encravada',
+            description = 'A ignição encravou e precisa de reparo mecânico.',
+            type = 'error'
+        })
+        return true
+    end
+    return false
+end
+
+function LockPick:TriggerVehicleAlarm(vehicle)
+    local vehClass = GetVehicleClass(vehicle)
+    if Shared.luxuryClasses[vehClass] then
+        TriggerServerEvent(Shared.dispatch.event, {
+            code = '10-60',
+            title = 'Alarme silencioso',
+            description = ('Tentativa de furto em %s'):format(GetVehicleNumberPlateText(vehicle)),
+            coords = GetEntityCoords(vehicle)
+        })
+        return
+    end
+
+    SetVehicleAlarm(vehicle, true)
+    SetVehicleAlarmTimeLeft(vehicle, 60000)
+end
+
 function LockPick:BreakLockPick(isAdvanced)
     local chance = math.random()
     local canBreak = isAdvanced and chance <= Shared.lockpick.advancedBreakChance or chance <= Shared.lockpick.breakChance
@@ -30,6 +67,14 @@ function LockPick:LockPickDoor(isAdvanced)
     local playerPos = GetEntityCoords(cache.ped)
     local vehicle = lib.getClosestVehicle(playerPos, 3.0, false)
     if not vehicle or GetVehicleDoorLockStatus(vehicle) == 1 then return end
+
+    if self:IsIgnitionJammed(vehicle) then
+        lib.notify({
+            description = 'A ignição está encravada. Chame um mecânico para reparar.',
+            type = 'error'
+        })
+        return
+    end
     if self.lockpicking then return end
     self.lockpicking = true
     lib.requestAnimDict("anim@amb@clubhouse@tutorial@bkr_tut_ig3@")
@@ -54,8 +99,8 @@ function LockPick:LockPickDoor(isAdvanced)
         SetVehicleLights(vehicle, 0)
         return
     end
-    SetVehicleAlarm(vehicle, true)
-    SetVehicleAlarmTimeLeft(vehicle, 60000)
+    self:TriggerVehicleAlarm(vehicle)
+    self:ApplyIgnitionFailureDamage(vehicle)
     lib.notify({
         title = 'Falhou',
         description = 'Falhou em destrancar a porta!',
@@ -65,6 +110,14 @@ end
 
 function LockPick:LockPickEngine(isAdvanced)
     if VehicleKeys.currentVehicle == 0 or GetIsVehicleEngineRunning(VehicleKeys.currentVehicle) then return end
+
+    if self:IsIgnitionJammed(VehicleKeys.currentVehicle) then
+        lib.notify({
+            description = 'A ignição está encravada. Chame um mecânico para reparar.',
+            type = 'error'
+        })
+        return
+    end
 
     local vehClass = GetVehicleClass(VehicleKeys.currentVehicle)
     if Shared.blacklistedClasses[vehClass] then
@@ -90,8 +143,8 @@ function LockPick:LockPickEngine(isAdvanced)
         VehicleKeys.isEngineRunning = true
         return
     end
-    SetVehicleAlarm(VehicleKeys.currentVehicle, true)
-    SetVehicleAlarmTimeLeft(VehicleKeys.currentVehicle, 60000)
+    self:TriggerVehicleAlarm(VehicleKeys.currentVehicle)
+    self:ApplyIgnitionFailureDamage(VehicleKeys.currentVehicle)
     lib.notify({
         description = 'Falhou em ligar a ignição!',
         type = 'error'

@@ -90,6 +90,7 @@ function GetVehicleClass(model)
             end
 
             vehicleClassesPromise:resolve()
+            vehicleClassesPromise = nil
         end
     end
     return vehicleClasses[model]

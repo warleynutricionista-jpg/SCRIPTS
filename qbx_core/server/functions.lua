@@ -113,7 +113,8 @@ function GetPlayerByCitizenId(citizenid)
     end
     -- Fallback linear search (index may be stale)
     for s in pairs(QBX.Players) do
-        if QBX.Players[s].PlayerData.citizenid == citizenid then
+        local pd = QBX.Players[s].PlayerData
+        if pd and pd.citizenid == citizenid then
             citizenidToSource[citizenid] = s
             return QBX.Players[s]
         end
@@ -130,7 +131,8 @@ function GetPlayerByUserId(userId)
         return QBX.Players[src]
     end
     for s in pairs(QBX.Players) do
-        if QBX.Players[s].PlayerData.userId == userId then
+        local pd = QBX.Players[s].PlayerData
+        if pd and pd.userId == userId then
             useridToSource[userId] = s
             return QBX.Players[s]
         end
@@ -147,7 +149,8 @@ function GetPlayerByPhone(number)
         return QBX.Players[src]
     end
     for s in pairs(QBX.Players) do
-        if QBX.Players[s].PlayerData.charinfo.phone == number then
+        local charinfo = QBX.Players[s].PlayerData.charinfo
+        if charinfo and charinfo.phone == number then
             phoneToSource[number] = s
             return QBX.Players[s]
         end

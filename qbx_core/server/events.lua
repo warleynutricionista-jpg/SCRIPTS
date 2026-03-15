@@ -50,7 +50,7 @@ AddEventHandler('playerDropped', function(reason)
         message = ('**%s** (%s) left...\n **Reason:** %s'):format(GetPlayerName(src), player.PlayerData.license, reason),
     })
     player.Functions.Save()
-    QBX.Player_Buckets[player.PlayerData.license] = nil
+    QBX.Player_Buckets[src] = nil
     QBX.Players[src] = nil
 end)
 
@@ -78,6 +78,15 @@ end
 local function onPlayerConnecting(name, _, deferrals)
     local src = source --[[@as string]]
     local license = GetPlayerIdentifierByType(src, 'license2') or GetPlayerIdentifierByType(src, 'license')
+    local isDeferralDone = false
+
+    local function finishDeferral(message)
+        if isDeferralDone then return true end
+        isDeferralDone = true
+        deferrals.done(message)
+        return false
+    end
+
     deferrals.defer()
 
     -- Mandatory wait
@@ -85,16 +94,16 @@ local function onPlayerConnecting(name, _, deferrals)
 
     if serverConfig.closed then
         if not IsPlayerAceAllowed(src, 'qbadmin.join') then
-            deferrals.done(serverConfig.closedReason)
+            finishDeferral(serverConfig.closedReason)
             return
         end
     end
 
     if not license then
-        deferrals.done(locale('error.no_valid_license'))
+        finishDeferral(locale('error.no_valid_license'))
         return
     elseif serverConfig.checkDuplicateLicense and usedLicenses[license] then
-        deferrals.done(locale('error.duplicate_license'))
+        finishDeferral(locale('error.duplicate_license'))
         return
     end
 
@@ -118,7 +127,8 @@ local function onPlayerConnecting(name, _, deferrals)
             local isBanned, Reason = IsPlayerBanned(src --[[@as Source]])
             if isBanned then
                 Wait(0) -- Mandatory wait
-                deferrals.done(Reason)
+                finishDeferral(Reason)
+                return
             end
         end)
 
@@ -127,7 +137,8 @@ local function onPlayerConnecting(name, _, deferrals)
             success, err = pcall(function()
                 if not IsWhitelisted(src --[[@as Source]]) then
                     Wait(0) -- Mandatory wait
-                    deferrals.done(locale('error.not_whitelisted'))
+                    finishDeferral(locale('error.not_whitelisted'))
+                    return
                 end
             end)
         end
@@ -139,12 +150,13 @@ local function onPlayerConnecting(name, _, deferrals)
     end)
 
     local onError = function(err)
-        deferrals.done(locale('error.connecting_error'))
+        finishDeferral(locale('error.connecting_error'))
         lib.print.error(err)
     end
 
     -- wait for database to finish
     databasePromise:next(function()
+        if isDeferralDone then return end
         deferrals.update(locale('info.join_server', name, serverName))
 
         -- Mandatory wait
@@ -153,14 +165,14 @@ local function onPlayerConnecting(name, _, deferrals)
         if queue then
             queue.awaitPlayerQueue(src --[[@as Source]], license, deferrals)
         else
-            deferrals.done()
+            finishDeferral()
         end
     end, onError):next(function() end, onError)
 
     -- if conducting db checks for too long then raise error
     while databasePromise.state == 0 do
         if os.clock() - databaseTime > 30 then
-            deferrals.done(locale('error.connecting_database_timeout'))
+            finishDeferral(locale('error.connecting_database_timeout'))
             error(locale('error.connecting_database_timeout'))
             break
         end

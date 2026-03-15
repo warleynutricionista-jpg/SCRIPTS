@@ -1,3 +1,23 @@
+-- ============================================================================
+-- LEGACY FILE -- DO NOT LOAD VIA FXMANIFEST
+-- ============================================================================
+-- This file has been superseded by server/main.lua, which contains the same
+-- functionality with the following improvements:
+--   * Source validation on every event handler and callback
+--   * pcall guards around all json.decode / database operations
+--   * Input type and length validation before processing
+--   * Ownership checks (e.g. ownsOutfit) before mutation
+--   * Atomic chargeAndSave event (charge before persisting appearance)
+--   * playerDropped cleanup for outfitCache and uniformCache
+--   * Fixed typo in joboutfits command event name
+--     (was "illenium-apearance:client:outfitsCommand",
+--      now "illenium-appearance:client:outfitsCommand")
+--
+-- This file is kept for reference only. It is NOT listed in fxmanifest.lua
+-- and will not be executed at runtime. It should be consolidated with
+-- server/main.lua (i.e. deleted) in a future update once confirmed safe.
+-- ============================================================================
+
 local outfitCache = {}
 local uniformCache = {}
 

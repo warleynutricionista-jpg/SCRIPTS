@@ -39,6 +39,12 @@ RegisterNetEvent('qbx_core:client:onGangUpdate', function(gangName, gang)
     gangs[gangName] = gang
 end)
 
-local groups = lib.callback.await('qbx_core:server:getGroups')
-jobs = groups.jobs
-gangs = groups.gangs
+CreateThread(function()
+    local ok, result = pcall(lib.callback.await, 'qbx_core:server:getGroups')
+    if ok and result then
+        jobs = result.jobs
+        gangs = result.gangs
+    else
+        lib.print.error('Failed to fetch groups from server')
+    end
+end)

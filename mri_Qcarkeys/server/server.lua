@@ -3,6 +3,12 @@ local Bridge = require 'server.bridge'
 local VehicleList = {}
 local getItemInfo = Shared.Inventory == 'qb' and function(item) return item.info end or function(item) return item.metadata end
 
+local function isValidPlate(plate)
+    if type(plate) ~= 'string' then return false end
+    if #plate == 0 or #plate > 10 then return false end
+    return plate:match('^[%w%s]+$') ~= nil
+end
+
 local function RemoveSpecialCharacter(txt)
     return txt:gsub("%W", "")
 end
@@ -18,7 +24,7 @@ function GiveTempKeys(id, plate)
 		Bridge:AddItem(id, 'vehiclekey', info)
     end
 
-    table.insert(VehicleList[citizenid], plate)
+    VehicleList[citizenid][plate] = true
     local ndata = {
         title = 'Recebido',
         description = 'Você recebeu a chave temporária para o veículo',
@@ -32,7 +38,7 @@ function RemoveTempKeys(id, plate)
     local citizenid = Bridge:GetPlayerCitizenId(id)
     plate = RemoveSpecialCharacter(plate)
     if VehicleList[citizenid] and VehicleList[citizenid][plate] then
-        table.remove(VehicleList[citizenid], plate)
+        VehicleList[citizenid][plate] = nil
     end
     TriggerClientEvent('mm_carkeys:client:removetempkeys', id, plate)
 end
@@ -109,25 +115,35 @@ lib.callback.register('mm_carkeys:server:getvehiclekeys', function(source)
 end)
 
 RegisterNetEvent('mm_carkeys:server:setVehLockState', function(vehNetId, state)
+    local src = source
+    if not src or src <= 0 then return end
     SetVehicleDoorsLocked(NetworkGetEntityFromNetworkId(vehNetId), state)
 end)
 
 RegisterNetEvent('mm_carkeys:server:acquiretempvehiclekeys', function(plate)
     local src = source
+    if not src or src <= 0 then return end
+    if not isValidPlate(plate) then return end
     GiveTempKeys(src, plate)
 end)
 
 RegisterNetEvent('mm_carkeys:server:removetempvehiclekeys', function(plate)
     local src = source
+    if not src or src <= 0 then return end
+    if not isValidPlate(plate) then return end
     RemoveTempKeys(src, plate)
 end)
 
 RegisterNetEvent('mm_carkeys:server:removelockpick', function(item)
-    Bridge:RemoveItem(source, item)
+    local src = source
+    if not src or src <= 0 then return end
+    Bridge:RemoveItem(src, item)
 end)
 
 RegisterNetEvent('mm_carkeys:server:acquirevehiclekeys', function(plate)
     local src = source
+    if not src or src <= 0 then return end
+    if not isValidPlate(plate) then return end
 	local Player = Bridge:GetPlayer(src)
     if Player then
 
@@ -140,6 +156,8 @@ end)
 
 RegisterNetEvent('qb-vehiclekeys:server:AcquireVehicleKeys', function(plate)
     local src = source
+    if not src or src <= 0 then return end
+    if not isValidPlate(plate) then return end
 	local Player = Bridge:GetPlayer(src)
     if Player then
         local info = {}
@@ -151,6 +169,8 @@ end)
 
 RegisterNetEvent('mm_carkeys:server:removevehiclekeys', function(plate)
     local src = source
+    if not src or src <= 0 then return end
+    if not isValidPlate(plate) then return end
     local keys = Bridge:GetPlayerItemsByName(src, 'vehiclekey')
     for _, v in pairs(keys) do
         local info = getItemInfo(v)
@@ -163,10 +183,11 @@ end)
 
 RegisterNetEvent('mm_carkeys:server:stackkeys', function()
     local src = source
+    if not src or src <= 0 then return end
     local bagFound = Bridge:GetPlayerItemByName(src, 'keybag')
     local keys = Bridge:GetPlayerItemsByName(src, 'vehiclekey')
     local plates = {}
-    local platestxt = ''
+    local platesList = {}
     for _, v in pairs(keys) do
         local info = getItemInfo(v)
         if info.plate then
@@ -174,7 +195,7 @@ RegisterNetEvent('mm_carkeys:server:stackkeys', function()
                 plate = info.plate,
                 label = info.label
             }
-            platestxt = platestxt..info.plate..', '
+            platesList[#platesList+1] = info.plate
             Bridge:RemoveItem(src, 'vehiclekey', v.slot)
         end
     end
@@ -186,15 +207,17 @@ RegisterNetEvent('mm_carkeys:server:stackkeys', function()
                 plate = v.plate,
                 label = v.label
             }
-            platestxt = platestxt..v.plate..', '
+            platesList[#platesList+1] = v.plate
         end
         Bridge:RemoveItem(src, 'keybag', bagFound.slot)
     end
+    local platestxt = table.concat(platesList, ', ')
     Bridge:AddItem(src, 'keybag', {plates = plates, platestxt = platestxt})
 end)
 
 RegisterNetEvent('mm_carkeys:server:unstackkeys', function()
     local src = source
+    if not src or src <= 0 then return end
     local bag = Bridge:GetPlayerItemByName(src, 'keybag')
     if not bag then
         local ndata = {
@@ -211,6 +234,14 @@ RegisterNetEvent('mm_carkeys:server:unstackkeys', function()
 		info.label = v.label
         info.plate = v.plate
         Bridge:AddItem(src, 'vehiclekey', info)
+    end
+end)
+
+AddEventHandler('playerDropped', function()
+    local src = source
+    local citizenid = Bridge:GetPlayerCitizenId(src)
+    if citizenid and VehicleList[citizenid] then
+        VehicleList[citizenid] = nil
     end
 end)
 

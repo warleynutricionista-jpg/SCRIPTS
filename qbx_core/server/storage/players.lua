@@ -1,6 +1,20 @@
 local defaultSpawn = require 'config.shared'.defaultSpawn
 local characterDataTables = require 'config.server'.characterDataTables
 
+local tableExistsCache = {}
+
+local VALID_ID_COLUMNS = {
+    steam = true,
+    license = true,
+    license2 = true,
+    xbl = true,
+    discord = true,
+    fivem = true,
+    live = true,
+}
+
+local VALID_BAN_COLUMNS = { license = true, discord = true, ip = true }
+
 local function createUsersTable()
     MySQL.query([[
         CREATE TABLE IF NOT EXISTS `users` (
@@ -31,8 +45,11 @@ end
 ---@return integer?
 local function fetchUserByIdentifier(identifier)
     local idType = identifier:match('([^:]+)')
+    if not idType or not VALID_ID_COLUMNS[idType] then
+        lib.print.error(('Invalid identifier type: %s'):format(tostring(idType)))
+        return nil
+    end
     local select = ('SELECT `userId` FROM `users` WHERE `%s` = ? LIMIT 1'):format(idType)
-
     return MySQL.scalar.await(select, { identifier })
 end
 
@@ -78,7 +95,10 @@ end
 ---@return BanEntity?
 local function fetchBan(request)
     local column, value = getBanId(request)
-    local result = MySQL.single.await('SELECT expire, reason FROM bans WHERE ' ..column.. ' = ?', { value })
+    if not VALID_BAN_COLUMNS[column] then
+        error('invalid ban column: ' .. tostring(column), 2)
+    end
+    local result = MySQL.single.await('SELECT expire, reason FROM bans WHERE ' .. column .. ' = ?', { value })
     return result and {
         expire = result.expire,
         reason = result.reason,
@@ -88,7 +108,10 @@ end
 ---@param request GetBanRequest
 local function deleteBan(request)
     local column, value = getBanId(request)
-    MySQL.query.await('DELETE FROM bans WHERE ' ..column.. ' = ?', { value })
+    if not VALID_BAN_COLUMNS[column] then
+        error('invalid ban column: ' .. tostring(column), 2)
+    end
+    MySQL.query.await('DELETE FROM bans WHERE ' .. column .. ' = ?', { value })
 end
 
 ---@param request UpsertPlayerRequest
@@ -167,7 +190,7 @@ end
 
 ---@param filters table<string, any>
 local function handleSearchFilters(filters)
-    if not (filters) then return '', {} end
+    if not filters then return '', {} end
     local holders = {}
     local clauses = {}
     if filters.license then
@@ -186,23 +209,31 @@ local function handleSearchFilters(filters)
         local strict = filters.metadata.strict
         for key, value in pairs(filters.metadata) do
             if key ~= "strict" then
+                -- Validate metadata key to prevent injection
+                if not key:match('^[%w_]+$') then
+                    lib.print.warn(('Skipping unsafe metadata key: %s'):format(tostring(key)))
+                    goto continueFilter
+                end
+                local jsonPath = '$.' .. key
                 if type(value) == "number" then
                     if strict then
-                        clauses[#clauses + 1] = 'JSON_EXTRACT(metadata, "$.' .. key .. '") = ?'
+                        clauses[#clauses + 1] = 'JSON_EXTRACT(metadata, "' .. jsonPath .. '") = ?'
                     else
-                        clauses[#clauses + 1] = 'JSON_EXTRACT(metadata, "$.' .. key .. '") >= ?'
+                        clauses[#clauses + 1] = 'JSON_EXTRACT(metadata, "' .. jsonPath .. '") >= ?'
                     end
                     holders[#holders + 1] = value
                 elseif type(value) == "boolean" then
-                    clauses[#clauses + 1] = 'JSON_EXTRACT(metadata, "$.' .. key .. '") = ?'
+                    clauses[#clauses + 1] = 'JSON_EXTRACT(metadata, "' .. jsonPath .. '") = ?'
                     holders[#holders + 1] = tostring(value)
                 elseif type(value) == "string" then
-                    clauses[#clauses + 1] = 'JSON_UNQUOTE(JSON_EXTRACT(metadata, "$.' .. key .. '")) = ?'
+                    clauses[#clauses + 1] = 'JSON_UNQUOTE(JSON_EXTRACT(metadata, "' .. jsonPath .. '")) = ?'
                     holders[#holders + 1] = value
                 end
+                ::continueFilter::
             end
         end
     end
+    if #clauses == 0 then return '', {} end
     return (' WHERE %s'):format(table.concat(clauses, ' AND ')), holders
 end
 
@@ -221,33 +252,46 @@ end
 ---@param tableName string
 ---@return boolean
 local function doesTableExist(tableName)
-    local tbl = MySQL.single.await(('SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_NAME = \'%s\' AND TABLE_SCHEMA in (SELECT DATABASE())'):format(tableName))
-    return tbl['COUNT(*)'] > 0
+    if tableExistsCache[tableName] ~= nil then
+        return tableExistsCache[tableName]
+    end
+    local tbl = MySQL.single.await('SELECT COUNT(*) as cnt FROM information_schema.TABLES WHERE TABLE_NAME = ? AND TABLE_SCHEMA IN (SELECT DATABASE())', { tableName })
+    local exists = tbl and tbl.cnt > 0
+    tableExistsCache[tableName] = exists
+    return exists
 end
 
 ---deletes character data using the characterDataTables object in the config file
 ---@param citizenId string
 ---@return boolean success if operation is successful.
 local function deletePlayer(citizenId)
-    local query = 'DELETE FROM %s WHERE %s = ?'
+    local query = 'DELETE FROM `%s` WHERE `%s` = ?'
     local queries = {}
 
     for i = 1, #characterDataTables do
         local data = characterDataTables[i]
         local tableName = data[1]
         local columnName = data[2]
+        if not tableName or not columnName then
+            lib.print.warn(('Invalid characterDataTable entry at index %d'):format(i))
+            goto continue
+        end
+        if not tableName:match('^[%w_]+$') or not columnName:match('^[%w_]+$') then
+            lib.print.warn(('Unsafe table/column name: %s.%s'):format(tableName, columnName))
+            goto continue
+        end
         if doesTableExist(tableName) then
             queries[#queries + 1] = {
                 query = query:format(tableName, columnName),
-                values = {
-                    citizenId,
-                }
+                values = { citizenId }
             }
         else
             warn(('Table %s does not exist in database, please remove it from qbx_core/config/server.lua or create the table'):format(tableName))
         end
+        ::continue::
     end
 
+    if #queries == 0 then return false end
     local success = MySQL.transaction.await(queries)
     return not not success
 end

@@ -7,7 +7,9 @@ local uniformCache = {} -- [citizenid] = uniform data or nil
 -- ── Helpers ───────────────────────────────────────────────────────────────────
 
 local function isValidSource(src)
-    return src and src > 0 and GetPlayerName(src) ~= nil
+    if type(src) ~= 'number' or src <= 0 then return false end
+    local name = GetPlayerName(src)
+    return name ~= nil and name ~= ''
 end
 
 local function getCitizenID(src)
@@ -27,8 +29,11 @@ end
 
 local function loadOutfitsForPlayer(citizenID)
     outfitCache[citizenID] = {}
-    local rows = Database.PlayerOutfits.GetAllByCitizenID(citizenID)
-    if not rows then return end
+    local ok, rows = pcall(Database.PlayerOutfits.GetAllByCitizenID, citizenID)
+    if not ok or not rows then
+        if not ok then print(('[illenium-appearance] Failed to load outfits for %s: %s'):format(citizenID, tostring(rows))) end
+        return
+    end
     for i = 1, #rows do
         local row = rows[i]
         local ok1, components = pcall(json.decode, row.components or '[]')
@@ -47,6 +52,7 @@ local function getPlayerOutfits(citizenID)
     return outfitCache[citizenID]
 end
 
+-- Linear search is acceptable here; player outfit arrays are small (typically < 50 entries)
 local function ownsOutfit(citizenID, outfitID)
     for _, v in ipairs(getPlayerOutfits(citizenID)) do
         if v.id == outfitID then return true end
@@ -59,6 +65,8 @@ local function isValidAppearance(appearance)
         and type(appearance.model) == 'string'
         and #appearance.model > 0
 end
+
+local MAX_CODE_ATTEMPTS = 100
 
 -- ── Callbacks ─────────────────────────────────────────────────────────────────
 
@@ -133,7 +141,12 @@ lib.callback.register('illenium-appearance:server:generateOutfitCode', function(
     local existing = Database.PlayerOutfitCodes.GetByOutfitID(outfitID)
     if existing then return existing.code end
     local code, exists
+    local attempts = 0
     repeat
+        attempts = attempts + 1
+        if attempts > MAX_CODE_ATTEMPTS then
+            return nil
+        end
         code   = GenerateNanoID(Config.OutfitCodeLength)
         exists = Database.PlayerOutfitCodes.GetByCode(code)
     until not exists
@@ -173,7 +186,10 @@ RegisterNetEvent('illenium-appearance:server:saveAppearance', function(appearanc
     local citizenID = getCitizenID(src)
     if not citizenID then return end
     if not isValidAppearance(appearance) then return end
-    Framework.SaveAppearance(appearance, citizenID)
+    local ok, err = pcall(Framework.SaveAppearance, appearance, citizenID)
+    if not ok then
+        print(('[illenium-appearance] Failed to save appearance for %s: %s'):format(citizenID, tostring(err)))
+    end
 end)
 
 -- Atomic charge + save: charge first, only save if successful.
@@ -190,7 +206,10 @@ RegisterNetEvent('illenium-appearance:server:chargeAndSave', function(shopType, 
         return
     end
     lib.notify(src, { title = _L('purchase.store.success.title'), description = string.format(_L('purchase.store.success.description'), money, shopType), type = 'success', position = Config.NotifyOptions.position })
-    Framework.SaveAppearance(appearance, citizenID)
+    local ok, err = pcall(Framework.SaveAppearance, appearance, citizenID)
+    if not ok then
+        print(('[illenium-appearance] Failed to save appearance after charge for %s: %s'):format(citizenID, tostring(err)))
+    end
 end)
 
 RegisterNetEvent('illenium-appearance:server:saveOutfit', function(name, model, components, props)
@@ -201,8 +220,11 @@ RegisterNetEvent('illenium-appearance:server:saveOutfit', function(name, model, 
     if type(components) ~= 'table' or type(props) ~= 'table' then return end
     local citizenID = getCitizenID(src)
     if not citizenID then return end
-    local id = Database.PlayerOutfits.Add(citizenID, name, model, json.encode(components), json.encode(props))
-    if not id then return end
+    local ok, id = pcall(Database.PlayerOutfits.Add, citizenID, name, model, json.encode(components), json.encode(props))
+    if not ok or not id then
+        print(('[illenium-appearance] Failed to save outfit for %s: %s'):format(citizenID, tostring(id)))
+        return
+    end
     local outfits = getPlayerOutfits(citizenID)
     outfits[#outfits + 1] = { id = id, name = name, model = model, components = components, props = props }
     lib.notify(src, { title = _L('outfits.save.success.title'), description = string.format(_L('outfits.save.success.description'), name), type = 'success', position = Config.NotifyOptions.position })
@@ -216,7 +238,11 @@ RegisterNetEvent('illenium-appearance:server:updateOutfit', function(id, model, 
     local citizenID = getCitizenID(src)
     if not citizenID then return end
     if not ownsOutfit(citizenID, id) then return end
-    Database.PlayerOutfits.Update(id, model, json.encode(components), json.encode(props))
+    local ok, err = pcall(Database.PlayerOutfits.Update, id, model, json.encode(components), json.encode(props))
+    if not ok then
+        print(('[illenium-appearance] Failed to update outfit %d: %s'):format(id, tostring(err)))
+        return
+    end
     local outfitName = ''
     for _, outfit in ipairs(outfitCache[citizenID] or {}) do
         if outfit.id == id then
@@ -234,8 +260,13 @@ RegisterNetEvent('illenium-appearance:server:deleteOutfit', function(id)
     local citizenID = getCitizenID(src)
     if not citizenID then return end
     if not ownsOutfit(citizenID, id) then return end
-    Database.PlayerOutfitCodes.DeleteByOutfitID(id)
-    Database.PlayerOutfits.DeleteByID(id)
+    local ok1, err1 = pcall(Database.PlayerOutfitCodes.DeleteByOutfitID, id)
+    if not ok1 then print(('[illenium-appearance] Failed to delete outfit codes for %d: %s'):format(id, tostring(err1))) end
+    local ok2, err2 = pcall(Database.PlayerOutfits.DeleteByID, id)
+    if not ok2 then
+        print(('[illenium-appearance] Failed to delete outfit %d: %s'):format(id, tostring(err2)))
+        return
+    end
     for k, v in ipairs(outfitCache[citizenID] or {}) do
         if v.id == id then table.remove(outfitCache[citizenID], k); break end
     end
@@ -248,7 +279,11 @@ RegisterNetEvent('illenium-appearance:server:saveManagementOutfit', function(out
     if outfitData.Type ~= 'Job' and outfitData.Type ~= 'Gang' then return end
     local job = outfitData.Type == 'Gang' and Framework.GetGang(src) or Framework.GetJob(src)
     if job.name ~= outfitData.JobName then return end
-    Database.ManagementOutfits.Add(outfitData)
+    local ok, err = pcall(Database.ManagementOutfits.Add, outfitData)
+    if not ok then
+        print(('[illenium-appearance] Failed to save management outfit: %s'):format(tostring(err)))
+        return
+    end
     lib.notify(src, { title = _L('outfits.save.success.title'), description = string.format(_L('outfits.save.success.description'), tostring(outfitData.Name)), type = 'success', position = Config.NotifyOptions.position })
 end)
 
@@ -256,7 +291,10 @@ RegisterNetEvent('illenium-appearance:server:deleteManagementOutfit', function(i
     local src = source
     if not isValidSource(src) then return end
     if type(id) ~= 'number' then return end
-    Database.ManagementOutfits.DeleteByID(id)
+    local ok, err = pcall(Database.ManagementOutfits.DeleteByID, id)
+    if not ok then
+        print(('[illenium-appearance] Failed to delete management outfit %d: %s'):format(id, tostring(err)))
+    end
 end)
 
 RegisterNetEvent('illenium-appearance:server:syncUniform', function(uniform)
@@ -270,6 +308,7 @@ end)
 
 RegisterNetEvent('illenium-appearance:server:resetOutfitCache', function()
     local src = source
+    if not isValidSource(src) then return end
     local citizenID = getCitizenID(src)
     if citizenID then outfitCache[citizenID] = nil end
 end)
@@ -287,9 +326,9 @@ RegisterNetEvent('illenium-appearance:server:ResetRoutingBucket', function()
 end)
 
 AddEventHandler('playerDropped', function()
-    local src    = source
-    local citizenID = Framework.GetPlayerID(src)
-    if citizenID then
+    local src = source
+    local ok, citizenID = pcall(Framework.GetPlayerID, src)
+    if ok and citizenID then
         outfitCache[citizenID]  = nil
         uniformCache[citizenID] = nil
     end

@@ -129,7 +129,10 @@ Shared = {
 }
 
 -- Backward compatibility aliases
-Shared.dispatch = Shared.alert
+Shared.dispatch = { event = Shared.alert.dispatchEvent }
 Shared.luxuryClasses = Shared.alert.silentClasses
 Shared.NPCHasGunChance = Shared.steal.armedNpcChance
 Shared.GrabKeysOnDriverChance = Shared.grab.keyLocationChance.driver
+
+Shared.ignition.failDamageMin = Shared.ignition.lockpickFailDamage
+Shared.ignition.failDamageMax = Shared.ignition.hotwireFailDamage

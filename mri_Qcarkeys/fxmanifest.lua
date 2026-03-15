@@ -2,7 +2,7 @@ fx_version "cerulean"
 game "gta5"
 use_experimental_fxv2_oal "yes"
 author "Master Mind"
-version "1.0.8"
+version "1.0.9"
 lua54 "yes"
 shared_scripts {
     "@ox_lib/init.lua",
@@ -22,6 +22,7 @@ server_scripts {
 files {
     "bridge/inventory/*.lua",
     "client/interface.lua",
+    "client/modules/vehicle_security.lua",
     "client/modules/*.lua",
     "server/bridge.lua"
 }

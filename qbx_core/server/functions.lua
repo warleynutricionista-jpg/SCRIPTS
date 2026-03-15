@@ -4,6 +4,24 @@ local logger = require 'modules.logger'
 local loggingConfig = require 'config.server'.logging
 local storage = require 'server.storage.main'
 
+local identifierToSource = {}
+
+AddEventHandler('playerJoining', function()
+    local src = source --[[@as string]]
+    local identifiers = GetPlayerIdentifiers(src)
+    for i = 1, #identifiers do
+        identifierToSource[identifiers[i]] = tonumber(src)
+    end
+end)
+
+AddEventHandler('playerDropped', function()
+    local src = source --[[@as string]]
+    local identifiers = GetPlayerIdentifiers(src)
+    for i = 1, #identifiers do
+        identifierToSource[identifiers[i]] = nil
+    end
+end)
+
 -- Getters
 -- Get your player first and then trigger a function on them
 -- ex: local player = GetPlayer(source)
@@ -14,9 +32,16 @@ local storage = require 'server.storage.main'
 ---@param identifier Identifier
 ---@return integer source of the player with the matching identifier or 0 if no player found
 function GetSource(identifier)
+    local cachedSource = identifierToSource[identifier]
+    if cachedSource and QBX.Players[cachedSource] then
+        return cachedSource
+    end
+
     for src in pairs(QBX.Players) do
         local idens = GetPlayerIdentifiers(src)
-        for _, id in pairs(idens) do
+        for i = 1, #idens do
+            local id = idens[i]
+            identifierToSource[id] = src
             if identifier == id then
                 return src
             end
@@ -30,15 +55,9 @@ exports('GetSource', GetSource)
 ---@param identifier Identifier
 ---@return integer source of the player with the matching identifier or 0 if no player found
 function GetUserId(identifier)
-    for src in pairs(QBX.Players) do
-        local idens = GetPlayerIdentifiers(src)
-        for _, id in pairs(idens) do
-            if identifier == id then
-                return QBX.Players[src].PlayerData.userId
-            end
-        end
-    end
-    return 0
+    local src = GetSource(identifier)
+    local player = QBX.Players[src]
+    return player and player.PlayerData.userId or 0
 end
 
 exports('GetUserId', GetUserId)
@@ -346,7 +365,7 @@ function IsOptin(source)
     local license = GetPlayerIdentifierByType(source --[[@as string]], 'license2') or GetPlayerIdentifierByType(source --[[@as string]], 'license')
     if not license or not IsPlayerAceAllowed(source --[[@as string]], 'admin') then return false end
     local player = GetPlayer(source)
-    return player.PlayerData.metadata.optin
+    return player and player.PlayerData.metadata.optin or false
 end
 
 exports('IsOptin', IsOptin)
@@ -357,6 +376,7 @@ function ToggleOptin(source)
     local license = GetPlayerIdentifierByType(source --[[@as string]], 'license2') or GetPlayerIdentifierByType(source --[[@as string]], 'license')
     if not license or not IsPlayerAceAllowed(source --[[@as string]], 'admin') then return end
     local player = GetPlayer(source)
+    if not player then return end
     player.PlayerData.metadata.optin = not player.PlayerData.metadata.optin
     player.Functions.SetMetaData('optin', player.PlayerData.metadata.optin)
 end
@@ -470,7 +490,9 @@ exports('ExploitBan', ExploitBan)
 ---@param filter string | string[] | table<string, number>
 ---@return boolean
 function HasPrimaryGroup(source, filter)
-    local playerData = QBX.Players[source].PlayerData
+    local player = QBX.Players[source]
+    if not player then return false end
+    local playerData = player.PlayerData
     return HasPlayerGotGroup(filter, playerData, true)
 end
 
@@ -480,7 +502,9 @@ exports('HasPrimaryGroup', HasPrimaryGroup)
 ---@param filter string | string[] | table<string, number>
 ---@return boolean
 function HasGroup(source, filter)
-    local playerData = QBX.Players[source].PlayerData
+    local player = QBX.Players[source]
+    if not player then return false end
+    local playerData = player.PlayerData
     return HasPlayerGotGroup(filter, playerData)
 end
 
@@ -489,7 +513,9 @@ exports('HasGroup', HasGroup)
 ---@param source Source
 ---@return table<string, integer>
 function GetGroups(source)
-    local playerData = QBX.Players[source].PlayerData
+    local player = QBX.Players[source]
+    if not player then return {} end
+    local playerData = player.PlayerData
     return GetPlayerGroups(playerData)
 end
 

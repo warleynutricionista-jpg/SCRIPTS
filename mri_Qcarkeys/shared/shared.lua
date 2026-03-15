@@ -1,18 +1,25 @@
 Shared = {
+    debug = {
+        ignition = false,
+        hotwire = false
+    },
     ignition = {
-        failDamageMin = 30.0, -- minimum engine damage on failed lockpick/hotwire
-        failDamageMax = 80.0, -- maximum engine damage on failed lockpick/hotwire
+        lockpickFailDamage = 45.0, -- engine health damage on failed lockpick
+        hotwireFailDamage = 60.0, -- engine health damage on failed hotwire/interruption
         jammedThreshold = 200.0 -- if engine health goes below this value, ignition is jammed
     },
-    dispatch = {
-        event = 'dispatch:server:notify', -- server event used when silent alarms are triggered
+    alert = {
+        silentClasses = {
+            [6] = true, -- Sports
+            [7] = true -- Super
+        },
+        dispatchEvent = 'dispatch:server:notify' -- server event used when silent alarms are triggered
     },
-    luxuryClasses = {
-        [6] = true, -- Sports
-        [7] = true -- Super
+    reputation = {
+        enabled = true,
+        resource = 'cw-rep',
+        maxLevel = 8
     },
-    NPCHasGunChance = 0.35, -- chance of carjacked NPC reacting with firearm
-    GrabKeysOnDriverChance = 0.45, -- chance keys are on the driver
     LockNPCVehicle = false, -- lock all npc vehicles
     playerDraggable = true, -- allow players to drag other players
     toggleLightsOnlyRemote = true, -- true if you want the vehicle lights to toggle only when not in the vehicle
@@ -37,12 +44,15 @@ Shared = {
             ["1548507267"] = 0.0, -- throwable
             ["4257178988"] = 0.0 -- misc
         },
+        armedNpcChance = 0.35,
         npcGunWeapons = {
             'WEAPON_PISTOL',
             'WEAPON_COMBATPISTOL',
             'WEAPON_APPISTOL',
             'WEAPON_MICROSMG'
-        }
+        },
+        npcAccuracy = 40,
+        npcAggressiveness = 2
     },
     lockpick = {
         minigameScript = "ox_lib", -- "ox_lib", "inside-lockpicking"
@@ -66,7 +76,12 @@ Shared = {
         minTime = 5000,
         maxTime = 7000,
         searchMinTime = 6000,
-        searchMaxTime = 9000
+        searchMaxTime = 9000,
+        keyLocationChance = {
+            driver = 0.45,
+            glovebox = 0.35,
+            sunvisor = 0.20
+        }
     },
     hotwire = {
         -- hotwire a vehicle
@@ -75,9 +90,11 @@ Shared = {
         stageOneLabel = "Removendo proteção da ignição...",
         stageTwoLabel = "Conectando fios da ignição...",
         chance = 0.1,
-        minTime = 5500,
-        maxTime = 8500,
-        stressIncrease = math.random(1, 3)
+        minTime = 8500,
+        maxTime = 12000,
+        stressIncrease = math.random(1, 3),
+        minigame = 'ox_lib', -- 'ox_lib' or 'rep-enginewire'
+        skillDifficulty = { 'easy', 'medium', 'medium' }
     },
     BlackListedWeapon = {
         "WEAPON_UNARMED",
@@ -110,3 +127,9 @@ Shared = {
         "WEAPON_SmokeGrenade"
     }
 }
+
+-- Backward compatibility aliases
+Shared.dispatch = Shared.alert
+Shared.luxuryClasses = Shared.alert.silentClasses
+Shared.NPCHasGunChance = Shared.steal.armedNpcChance
+Shared.GrabKeysOnDriverChance = Shared.grab.keyLocationChance.driver

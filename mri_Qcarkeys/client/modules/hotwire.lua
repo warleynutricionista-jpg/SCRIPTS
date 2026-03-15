@@ -1,48 +1,48 @@
 local VehicleKeys = require 'client.interface'
+local VehicleSecurity = require 'client.modules.vehicle_security'
 
 local Hotwire = {
-    isHotwiring = false
+    isHotwiring = false,
+    activeVehicle = 0
 }
 
-function Hotwire:IsIgnitionJammed(vehicle)
-    return GetVehicleEngineHealth(vehicle) <= Shared.ignition.jammedThreshold
-end
+function Hotwire:ResetState(showCancelledMessage)
+    self.isHotwiring = false
+    self.activeVehicle = 0
 
-function Hotwire:ApplyIgnitionFailureDamage(vehicle)
-    local damage = math.random() * (Shared.ignition.failDamageMax - Shared.ignition.failDamageMin) + Shared.ignition.failDamageMin
-    local newHealth = math.max(0.0, GetVehicleEngineHealth(vehicle) - damage)
-    SetVehicleEngineHealth(vehicle, newHealth)
+    if lib.progressActive() then
+        lib.cancelProgress()
+    end
 
-    if newHealth <= Shared.ignition.jammedThreshold then
+    if showCancelledMessage then
         lib.notify({
-            title = 'Ignição encravada',
-            description = 'A ignição encravou e precisa de reparo mecânico.',
+            title = 'Ligação direta',
+            description = 'Processo interrompido.',
             type = 'error'
         })
     end
 end
 
-function Hotwire:TriggerVehicleAlarm(vehicle, alarmTime)
-    local vehClass = GetVehicleClass(vehicle)
-    if Shared.luxuryClasses[vehClass] then
-        TriggerServerEvent(Shared.dispatch.event, {
-            code = '10-60',
-            title = 'Alarme silencioso',
-            description = ('Tentativa de ligação direta em %s'):format(GetVehicleNumberPlateText(vehicle)),
-            coords = GetEntityCoords(vehicle)
-        })
-        return
-    end
-
-    SetVehicleAlarm(vehicle, true)
-    SetVehicleAlarmTimeLeft(vehicle, alarmTime)
-end
-
 function Hotwire:CanContinueHotwire(vehicle)
-    return VehicleKeys.currentVehicle ~= 0
+    return vehicle ~= 0
+        and DoesEntityExist(vehicle)
+        and VehicleKeys.currentVehicle ~= 0
         and VehicleKeys.currentVehicle == vehicle
         and IsPedInVehicle(cache.ped, vehicle, false)
         and GetPedInVehicleSeat(vehicle, -1) == cache.ped
+        and not IsEntityDead(cache.ped)
+end
+
+function Hotwire:WatchInterruption(vehicle)
+    CreateThread(function()
+        while self.isHotwiring and self.activeVehicle == vehicle do
+            if not self:CanContinueHotwire(vehicle) then
+                self:ResetState(true)
+                return
+            end
+            Wait(100)
+        end
+    end)
 end
 
 function Hotwire:RunHotwireStage(label, duration, vehicle)
@@ -67,90 +67,85 @@ function Hotwire:RunHotwireStage(label, duration, vehicle)
     return completed and self:CanContinueHotwire(vehicle)
 end
 
-function Hotwire:HotwireHandler()
-    if self.isHotwiring then return end
-    if VehicleKeys.currentVehicle == 0 then return end
-
-    if self:IsIgnitionJammed(VehicleKeys.currentVehicle) then
-        lib.notify({
-            description = 'A ignição está encravada. Chame um mecânico para reparar.',
-            type = 'error'
-        })
-        return
-    end
-
-    local enginewire = nil
-    if GetResourceState('rep-enginewire') == 'started' then
-        enginewire = exports['rep-enginewire']:MiniGame()
-    end
-
-    self.isHotwiring = true
-    local vehicle = VehicleKeys.currentVehicle
+function Hotwire:RunSequence(vehicle)
     local hotwireTime = math.random(Shared.hotwire.minTime, Shared.hotwire.maxTime)
     local stageOneTime = math.floor(hotwireTime * 0.45)
     local stageTwoTime = hotwireTime - stageOneTime
-    local success = false
 
-    self:TriggerVehicleAlarm(vehicle, hotwireTime)
-    lib.hideTextUI()
-    VehicleKeys.showTextUi = false
+    VehicleSecurity:TriggerTheftAlert(vehicle, ('Tentativa de ligação direta em %s'):format(GetVehicleNumberPlateText(vehicle)), hotwireTime)
 
     local firstStage = self:RunHotwireStage(Shared.hotwire.stageOneLabel, stageOneTime, vehicle)
-    local secondStage = firstStage and self:RunHotwireStage(Shared.hotwire.stageTwoLabel, stageTwoTime, vehicle)
+    if not firstStage then return false, 'cancelled' end
 
-    if secondStage and (enginewire == nil or enginewire) then
-        TriggerServerEvent('hud:server:GainStress', Shared.hotwire.stressIncrease)
-        local level = exports['cw-rep']:getCurrentLevel('hotwiring')
-        if level > 8 then level = 8 end
-        if level == 0 then level = 1 end
+    local secondStage = self:RunHotwireStage(Shared.hotwire.stageTwoLabel, stageTwoTime, vehicle)
+    if not secondStage then return false, 'cancelled' end
 
-        if math.random() <= Shared.hotwire.chance * level then
-            exports['cw-rep']:updateSkill('hotwiring', 1)
-            TriggerServerEvent('mm_carkeys:server:acquiretempvehiclekeys', VehicleKeys.currentVehiclePlate)
-            SetVehicleEngineOn(vehicle, true, false, true)
-            VehicleKeys.isEngineRunning = true
-            success = true
-        else
-            self:ApplyIgnitionFailureDamage(vehicle)
-            local description
-            if level <= 1 then
-                description = 'Isso parece impossível para você!'
-            elseif level <= 2 then
-                description = 'Isso parece muito complicado para você!'
-            elseif level <= 3 then
-                description = 'Isso parece complicado pra você!'
-            elseif level <= 4 then
-                description = 'Isso parece difícil pra você!'
-            elseif level <= 5 then
-                description = 'Isso parece normal para você!'
-            else
-                description = 'Erros? Mas você não erra...'
-            end
-
-            lib.notify({
-                title = 'Falhou',
-                description = description,
-                type = 'error'
-            })
-        end
-    else
-        self:ApplyIgnitionFailureDamage(vehicle)
-        lib.notify({
-            title = 'Falhou',
-            description = 'Ligação direta interrompida ou falhou!',
-            type = 'error'
-        })
+    local minigameResult = VehicleSecurity:RunHotwireMinigame()
+    if not minigameResult then
+        return false, 'minigame_failed'
     end
 
-    if VehicleKeys.currentVehicle ~= 0 and VehicleKeys.isInDrivingSeat and not success and not VehicleKeys.showTextUi then
-        lib.showTextUI('Ligação direta', {
-            position = 'right-center',
-            icon = 'h',
-        })
+    if not self:CanContinueHotwire(vehicle) then
+        return false, 'cancelled'
+    end
+
+    local level = VehicleSecurity:GetReputationLevel('hotwiring')
+    local successChance = Shared.hotwire.chance * level
+
+    if math.random() <= successChance then
+        VehicleSecurity:UpdateReputation('hotwiring', 1)
+        TriggerServerEvent('mm_carkeys:server:acquiretempvehiclekeys', VehicleKeys.currentVehiclePlate)
+        SetVehicleEngineOn(vehicle, true, false, true)
+        VehicleKeys.isEngineRunning = true
+        return true
+    end
+
+    return false, 'chance_failed'
+end
+
+function Hotwire:HotwireHandler()
+    if self.isHotwiring then return end
+    if VehicleKeys.currentVehicle == 0 then return end
+    if not VehicleKeys.isInDrivingSeat then return end
+
+    local vehicle = VehicleKeys.currentVehicle
+
+    if VehicleSecurity:IsIgnitionJammed(vehicle) then
+        VehicleSecurity:NotifyIgnitionJammed()
+        return
+    end
+
+    self.isHotwiring = true
+    self.activeVehicle = vehicle
+
+    lib.hideTextUI()
+    VehicleKeys.showTextUi = false
+    self:WatchInterruption(vehicle)
+
+    local success, reason = self:RunSequence(vehicle)
+    TriggerServerEvent('hud:server:GainStress', Shared.hotwire.stressIncrease)
+
+    if self.activeVehicle == vehicle then
+        self.isHotwiring = false
+        self.activeVehicle = 0
+    end
+
+    if success then
+        return
+    end
+
+    VehicleSecurity:ApplyIgnitionFailureDamage(vehicle, Shared.ignition.hotwireFailDamage)
+
+    if reason == 'chance_failed' then
+        lib.notify({ title = 'Falhou', description = 'Você não conseguiu ligar a ignição.', type = 'error' })
+    elseif reason == 'minigame_failed' then
+        lib.notify({ title = 'Falhou', description = 'Você errou a ligação direta.', type = 'error' })
+    end
+
+    if VehicleKeys.currentVehicle ~= 0 and VehicleKeys.isInDrivingSeat and not VehicleKeys.showTextUi then
+        lib.showTextUI('Ligação direta', { position = 'right-center', icon = 'h' })
         VehicleKeys.showTextUi = true
     end
-
-    self.isHotwiring = false
 end
 
 function Hotwire:SetupHotwire()

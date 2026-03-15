@@ -1,4 +1,18 @@
 Shared = {
+    ignition = {
+        failDamageMin = 30.0, -- minimum engine damage on failed lockpick/hotwire
+        failDamageMax = 80.0, -- maximum engine damage on failed lockpick/hotwire
+        jammedThreshold = 200.0 -- if engine health goes below this value, ignition is jammed
+    },
+    dispatch = {
+        event = 'dispatch:server:notify', -- server event used when silent alarms are triggered
+    },
+    luxuryClasses = {
+        [6] = true, -- Sports
+        [7] = true -- Super
+    },
+    NPCHasGunChance = 0.35, -- chance of carjacked NPC reacting with firearm
+    GrabKeysOnDriverChance = 0.45, -- chance keys are on the driver
     LockNPCVehicle = false, -- lock all npc vehicles
     playerDraggable = true, -- allow players to drag other players
     toggleLightsOnlyRemote = true, -- true if you want the vehicle lights to toggle only when not in the vehicle
@@ -22,6 +36,12 @@ Shared = {
             ["2725924767"] = 0.99, -- heavy
             ["1548507267"] = 0.0, -- throwable
             ["4257178988"] = 0.0 -- misc
+        },
+        npcGunWeapons = {
+            'WEAPON_PISTOL',
+            'WEAPON_COMBATPISTOL',
+            'WEAPON_APPISTOL',
+            'WEAPON_MICROSMG'
         }
     },
     lockpick = {
@@ -42,16 +62,21 @@ Shared = {
         alive = true,
         leaveKeysOnVehicle = true, -- leave keys on vehicle
         label = "Roubando veículo...",
+        searchLabel = "Procurando chaves no interior...",
         minTime = 5000,
-        maxTime = 7000
+        maxTime = 7000,
+        searchMinTime = 6000,
+        searchMaxTime = 9000
     },
     hotwire = {
         -- hotwire a vehicle
         available = true,
         label = "Fazendo ligação direta...",
+        stageOneLabel = "Removendo proteção da ignição...",
+        stageTwoLabel = "Conectando fios da ignição...",
         chance = 0.1,
-        minTime = 2000,
-        maxTime = 3000,
+        minTime = 5500,
+        maxTime = 8500,
         stressIncrease = math.random(1, 3)
     },
     BlackListedWeapon = {

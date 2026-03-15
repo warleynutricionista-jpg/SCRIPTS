@@ -29,7 +29,7 @@ function Steal:MakePedFlee(target, vehicle)
     end
 end
 
-function Steal:CheckStealStatus(target)
+function Steal:CheckStealStatus(target, vehicle)
     CreateThread(function()
         SetVehicleUndriveable(vehicle, true)
         while self.isCarjacking do
@@ -47,12 +47,37 @@ function Steal:CheckStealStatus(target)
     end)
 end
 
+
+function Steal:ArmPedAndAttack(target, vehicle)
+    local weapon = Shared.steal.npcGunWeapons[math.random(1, #Shared.steal.npcGunWeapons)]
+    GiveWeaponToPed(target, joaat(weapon), 120, false, true)
+    SetCurrentPedWeapon(target, joaat(weapon), true)
+    SetPedCombatAttributes(target, 46, true)
+    SetPedCombatAbility(target, 2)
+    SetPedAsEnemy(target, true)
+    TaskLeaveVehicle(target, vehicle, 256)
+    Wait(800)
+    TaskCombatPed(target, cache.ped, 0, 16)
+    lib.notify({
+        title = 'Perigo',
+        description = 'O condutor estava armado e reagiu ao assalto! ',
+        type = 'error'
+    })
+end
+
 function Steal:CarjackVehicle(target)
     if self.isCarjacking or not self.canCarjack then return end
     self.isCarjacking = true
     self.canCarjack = false
     local vehicle = GetVehiclePedIsUsing(target)
     local carjackChance = Shared.steal.chance[tostring(GetWeapontypeGroup(cache.weapon))] or 0.5
+
+    if math.random() <= Shared.NPCHasGunChance then
+        self:ArmPedAndAttack(target, vehicle)
+        self.isCarjacking = false
+        self:ToggleCooldown()
+        return
+    end
     local chance = math.random()
     if chance > carjackChance then
         TriggerServerEvent('mm_carkeys:server:setVehLockState', NetworkGetNetworkIdFromEntity(vehicle), 2)
@@ -67,7 +92,7 @@ function Steal:CarjackVehicle(target)
     self:MakePedFlee(target, vehicle)
     CreateThread(function()
         Wait(350)
-        self:CheckStealStatus(target)
+        self:CheckStealStatus(target, vehicle)
         TaskTurnPedToFaceEntity(target, cache.ped, -1)
         TaskPlayAnim(target, "missminuteman_1ig_2", "handsup_base", 8.0, -8.0, -1, 49, 0, false, false, false)
     end)
@@ -111,7 +136,10 @@ end
 function Steal:GrabKey(vehicle)
     if self.isRobbingKeys then return end
     self.isRobbingKeys = true
+
     local robTime = math.random(Shared.grab.minTime, Shared.grab.maxTime)
+    local foundOnDriver = false
+
     if lib.progressBar({
         label = Shared.grab.label,
         duration = robTime,
@@ -120,8 +148,45 @@ function Steal:GrabKey(vehicle)
         useWhileDead = false,
         canCancel = true
     }) then
-        if Shared.grab.leaveKeysOnVehicle then
+        foundOnDriver = math.random() <= Shared.GrabKeysOnDriverChance
+        if not foundOnDriver then
+            lib.notify({
+                description = 'As chaves não estavam com o condutor. Procure no interior.',
+                type = 'inform'
+            })
+
+            if not IsPedInVehicle(cache.ped, vehicle, false) then
+                TaskEnterVehicle(cache.ped, vehicle, 4000, -1, 1.0, 1, 0)
+                Wait(1500)
+            end
+
+            local searchTime = math.random(Shared.grab.searchMinTime, Shared.grab.searchMaxTime)
+            foundOnDriver = lib.progressBar({
+                label = Shared.grab.searchLabel,
+                duration = searchTime,
+                position = 'bottom',
+                allowCuffed = false,
+                useWhileDead = false,
+                canCancel = true,
+                disable = {
+                    move = true,
+                    combat = true
+                },
+                anim = {
+                    dict = 'anim@amb@clubhouse@tutorial@bkr_tut_ig3@',
+                    clip = 'machinic_loop_mechandplayer'
+                }
+            })
+        end
+
+        if foundOnDriver and Shared.grab.leaveKeysOnVehicle then
             TriggerServerEvent('mm_carkeys:server:acquiretempvehiclekeys', GetVehicleNumberPlateText(vehicle))
+        elseif not foundOnDriver then
+            lib.notify({
+                title = 'Falhou',
+                description = 'Você não encontrou as chaves no interior.',
+                type = 'error'
+            })
         end
     else
         lib.notify({
@@ -130,6 +195,7 @@ function Steal:GrabKey(vehicle)
             type = 'error'
         })
     end
+
     self.isRobbingKeys = false
 end
 

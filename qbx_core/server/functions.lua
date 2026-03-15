@@ -5,6 +5,9 @@ local loggingConfig = require 'config.server'.logging
 local storage = require 'server.storage.main'
 
 local identifierToSource = {}
+local citizenidToSource = {}
+local useridToSource = {}
+local phoneToSource = {}
 
 AddEventHandler('playerJoining', function()
     local src = source --[[@as string]]
@@ -20,7 +23,34 @@ AddEventHandler('playerDropped', function()
     for i = 1, #identifiers do
         identifierToSource[identifiers[i]] = nil
     end
+    -- Clean lookup indexes
+    local player = QBX.Players[tonumber(src)]
+    if player then
+        local pd = player.PlayerData
+        if pd.citizenid then citizenidToSource[pd.citizenid] = nil end
+        if pd.userId then useridToSource[pd.userId] = nil end
+        if pd.charinfo and pd.charinfo.phone then phoneToSource[pd.charinfo.phone] = nil end
+    end
 end)
+
+---Called when player data is fully loaded to update lookup indexes
+---@param source Source
+function UpdatePlayerLookupIndexes(source)
+    local player = QBX.Players[source]
+    if not player then return end
+    local pd = player.PlayerData
+    if pd.citizenid then
+        citizenidToSource[pd.citizenid] = source
+    end
+    if pd.userId then
+        useridToSource[pd.userId] = source
+    end
+    if pd.charinfo and pd.charinfo.phone then
+        phoneToSource[pd.charinfo.phone] = source
+    end
+end
+
+exports('UpdatePlayerLookupIndexes', UpdatePlayerLookupIndexes)
 
 -- Getters
 -- Get your player first and then trigger a function on them
@@ -77,9 +107,15 @@ exports('GetPlayer', GetPlayer)
 ---@param citizenid string
 ---@return Player?
 function GetPlayerByCitizenId(citizenid)
-    for src in pairs(QBX.Players) do
-        if QBX.Players[src].PlayerData.citizenid == citizenid then
-            return QBX.Players[src]
+    local src = citizenidToSource[citizenid]
+    if src and QBX.Players[src] then
+        return QBX.Players[src]
+    end
+    -- Fallback linear search (index may be stale)
+    for s in pairs(QBX.Players) do
+        if QBX.Players[s].PlayerData.citizenid == citizenid then
+            citizenidToSource[citizenid] = s
+            return QBX.Players[s]
         end
     end
 end
@@ -89,9 +125,14 @@ exports('GetPlayerByCitizenId', GetPlayerByCitizenId)
 ---@param userId string
 ---@return Player?
 function GetPlayerByUserId(userId)
-    for src in pairs(QBX.Players) do
-        if QBX.Players[src].PlayerData.userId == userId then
-            return QBX.Players[src]
+    local src = useridToSource[userId]
+    if src and QBX.Players[src] then
+        return QBX.Players[src]
+    end
+    for s in pairs(QBX.Players) do
+        if QBX.Players[s].PlayerData.userId == userId then
+            useridToSource[userId] = s
+            return QBX.Players[s]
         end
     end
 end
@@ -101,9 +142,14 @@ exports('GetPlayerByUserId', GetPlayerByUserId)
 ---@param number string
 ---@return Player?
 function GetPlayerByPhone(number)
-    for src in pairs(QBX.Players) do
-        if QBX.Players[src].PlayerData.charinfo.phone == number then
-            return QBX.Players[src]
+    local src = phoneToSource[number]
+    if src and QBX.Players[src] then
+        return QBX.Players[src]
+    end
+    for s in pairs(QBX.Players) do
+        if QBX.Players[s].PlayerData.charinfo.phone == number then
+            phoneToSource[number] = s
+            return QBX.Players[s]
         end
     end
 end
@@ -127,11 +173,9 @@ function GetDutyCountJob(job)
     local players = {}
     local count = 0
     for src, player in pairs(QBX.Players) do
-        if player.PlayerData.job.name == job then
-            if player.PlayerData.job.onduty then
-                players[#players + 1] = src
-                count += 1
-            end
+        if player.PlayerData.job.name == job and player.PlayerData.job.onduty then
+            count += 1
+            players[count] = src
         end
     end
     return count, players
@@ -147,11 +191,9 @@ function GetDutyCountType(type)
     local players = {}
     local count = 0
     for src, player in pairs(QBX.Players) do
-        if player.PlayerData.job.type == type then
-            if player.PlayerData.job.onduty then
-                players[#players + 1] = src
-                count += 1
-            end
+        if player.PlayerData.job.type == type and player.PlayerData.job.onduty then
+            count += 1
+            players[count] = src
         end
     end
     return count, players
@@ -175,7 +217,7 @@ exports('GetBucketObjects', GetBucketObjects)
 ---@param bucket integer
 ---@return boolean
 function SetPlayerBucket(source, bucket)
-    if not (source or bucket) then return false end
+    if not source or not bucket then return false end
 
     Player(source).state:set('instance', bucket, true)
     SetPlayerRoutingBucket(source --[[@as string]], bucket)
@@ -190,7 +232,7 @@ exports('SetPlayerBucket', SetPlayerBucket)
 ---@param bucket integer
 ---@return boolean
 function SetEntityBucket(entity, bucket)
-    if not (entity or bucket) then return false end
+    if not entity or not bucket then return false end
 
     SetEntityRoutingBucket(entity, bucket)
     QBX.Entity_Buckets[entity] = bucket
@@ -204,8 +246,8 @@ exports('SetEntityBucket', SetEntityBucket)
 ---@return Source[]|boolean
 function GetPlayersInBucket(bucket)
     local curr_bucket_pool = {}
-    if not (QBX.Player_Buckets or next(QBX.Player_Buckets)) then
-        return false
+    if not QBX.Player_Buckets or not next(QBX.Player_Buckets) then
+        return curr_bucket_pool
     end
 
     for k, v in pairs(QBX.Player_Buckets) do
@@ -224,8 +266,8 @@ exports('GetPlayersInBucket', GetPlayersInBucket)
 ---@return boolean | integer[]
 function GetEntitiesInBucket(bucket)
     local curr_bucket_pool = {}
-    if not (QBX.Entity_Buckets or next(QBX.Entity_Buckets)) then
-        return false
+    if not QBX.Entity_Buckets or not next(QBX.Entity_Buckets) then
+        return curr_bucket_pool
     end
 
     for k, v in pairs(QBX.Entity_Buckets) do
@@ -556,8 +598,10 @@ exports("SearchPlayers", searchPlayerEntities)
 
 local function isGradeBoss(group, grade)
     local groupData = GetJob(group) or GetGang(group)
-    if not groupData then return end
-    return groupData.grades[grade].isboss
+    if not groupData then return false end
+    local gradeData = groupData.grades[grade]
+    if not gradeData then return false end
+    return gradeData.isboss or false
 end
 
 exports('IsGradeBoss', isGradeBoss)

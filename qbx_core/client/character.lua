@@ -251,7 +251,13 @@ local function previewPed(citizenId)
         return
     end
 
-    local clothing, model = lib.callback.await('qbx_core:server:getPreviewPedData', false, citizenId)
+    local ok, clothing, model = pcall(lib.callback.await, 'qbx_core:server:getPreviewPedData', false, citizenId)
+    if not ok then
+        lib.print.error('previewPed: failed to get ped data: ' .. tostring(clothing))
+        randomPed()
+        return
+    end
+
     if model and clothing then
         lib.requestModel(model, config.loadingModelsTimeout)
         SetPlayerModel(cache.playerId, model)
@@ -441,18 +447,23 @@ end
 local function createCharacter(cid)
     previewPed()
 
-    ::noMatch::
-
-    local dialog = characterDialog()
-    if not dialog then
-        return false
-    end
-
-    for input = 1, 3 do
-        if not checkStrings(dialog, input) then
-            safeNotify(locale('error.no_match_character_registration'), 'error', 10000)
-            goto noMatch
+    local dialog
+    while true do
+        dialog = characterDialog()
+        if not dialog then
+            return false
         end
+
+        local valid = true
+        for input = 1, 3 do
+            if not checkStrings(dialog, input) then
+                safeNotify(locale('error.no_match_character_registration'), 'error', 10000)
+                valid = false
+                break
+            end
+        end
+
+        if valid then break end
     end
 
     DoScreenFadeOut(150)

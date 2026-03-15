@@ -82,6 +82,7 @@ RegisterNetEvent('QBCore:Command:GoToMarker', function()
     -- 825.0 seems to be the max a player can reach while 0.0 being the lowest.
     local x, y, groundZ, Z_START = coords.x, coords.y, 850.0, 950.0
     local found = false
+    local startTime = GetGameTimer()
     if vehicle > 0 then
         FreezeEntityPosition(vehicle, true)
     else
@@ -89,6 +90,10 @@ RegisterNetEvent('QBCore:Command:GoToMarker', function()
     end
 
     for i = Z_START, 0, -25.0 do
+        if GetGameTimer() - startTime > 10000 then
+            lib.print.warn('GoToMarker: ground loading timed out')
+            break
+        end
         local z = i
         if (i % 2) ~= 0 then
             z = Z_START - i

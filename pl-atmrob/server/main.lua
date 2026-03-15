@@ -4,6 +4,8 @@ lib.versionCheck('pulsepk/pl-atmrob')
 
 local atmRobberyState = {}
 local ropeRobberyState = {}
+local lastRobberyAttempt = {}
+local ROBBERY_COOLDOWN = 60 -- seconds between robbery attempts per player
 
 local isEsExtendedStarted = GetResourceState('es_extended') == 'started'
 local isQbCoreStarted = GetResourceState('qb-core') == 'started'
@@ -48,6 +50,14 @@ end)
 RegisterServerEvent('pl_atmrobbery:MinigameResult')
 AddEventHandler('pl_atmrobbery:MinigameResult', function(success, method)
     local src = source
+    if not src or src <= 0 then return end
+
+    local now = os.time()
+    if lastRobberyAttempt[src] and (now - lastRobberyAttempt[src]) < ROBBERY_COOLDOWN then
+        return -- prevent spam
+    end
+    lastRobberyAttempt[src] = now
+
     if success and (method == 'drill' or method == 'hack') then
         atmRobberyState[src] = {
             minigamePassed = true,
@@ -62,13 +72,20 @@ end)
 RegisterNetEvent('pl_atmrobbery:server:completed')
 AddEventHandler('pl_atmrobbery:server:completed', function(atmCoords)
     local src = source
+    if not src or src <= 0 then return end
+
+    local now = os.time()
+    if lastRobberyAttempt[src] and (now - lastRobberyAttempt[src]) < ROBBERY_COOLDOWN then
+        return -- prevent spam
+    end
+
     local Player = getPlayer(src)
     local Identifier = getPlayerIdentifier(src)
     local PlayerName = getPlayerName(src)
     local ped = GetPlayerPed(src)
-    local distance = GetEntityCoords(ped)
+    local playerCoords = GetEntityCoords(ped)
 
-    if #(distance - atmCoords) <= 5 then
+    if #(playerCoords - atmCoords) <= 3.0 then
         if Player then
             local state = atmRobberyState[src]
             if state and state.minigamePassed then
@@ -97,6 +114,14 @@ end)
 RegisterNetEvent('pl_atmrobbery:rope_robbery_completed')
 AddEventHandler('pl_atmrobbery:rope_robbery_completed', function(atmCoords)
     local src = source
+    if not src or src <= 0 then return end
+
+    local now = os.time()
+    if lastRobberyAttempt[src] and (now - lastRobberyAttempt[src]) < ROBBERY_COOLDOWN then
+        return -- prevent spam
+    end
+    lastRobberyAttempt[src] = now
+
     local Player = getPlayer(src)
     local Identifier = getPlayerIdentifier(src)
     local PlayerName = getPlayerName(src)
@@ -105,7 +130,7 @@ AddEventHandler('pl_atmrobbery:rope_robbery_completed', function(atmCoords)
 
     local state = ropeRobberyState[src]
 
-    if #(playerCoords - atmCoords) > 15.0 then
+    if #(playerCoords - atmCoords) > 3.0 then
         print(('^1[Exploit Attempt]^0 %s (%s) triggered rope robbery too far from ATM.'):format(PlayerName, Identifier))
         return
     end
@@ -139,8 +164,10 @@ end)
 
 RegisterNetEvent('pl_atmrobbery:rope:requestAttachVehicle', function(payload)
     local src = source
+    if not src or src <= 0 then return end
     if type(payload) ~= 'table' then return end
     if not payload.atmNetId or not payload.vehicleNetId then return end
+    if type(payload.atmNetId) ~= 'number' or type(payload.vehicleNetId) ~= 'number' then return end
 
     ropeRobberyState[src] = {
         started = true,
@@ -158,8 +185,11 @@ end)
 
 
 RegisterNetEvent('pl_atmrobbery:rope:requestDetach', function(payload)
+    local src = source
+    if not src or src <= 0 then return end
     if type(payload) ~= 'table' then return end
     if not payload.atmNetId or not payload.vehicleNetId then return end
+    if type(payload.atmNetId) ~= 'number' or type(payload.vehicleNetId) ~= 'number' then return end
 
     TriggerClientEvent('pl_atmrobbery:rope:detachATM', -1, {
         atmNetId = payload.atmNetId,
@@ -169,6 +199,7 @@ end)
 
 RegisterNetEvent('pl_atmrobbery:server:removeRope', function()
     local src = source
+    if not src or src <= 0 then return end
     local player = getPlayer(src)
     if not player then return end
     RemoveItem(src, Config.RopeItem, 1)
@@ -176,6 +207,7 @@ end)
 
 RegisterNetEvent('pl_atmrobbery:server:removeDrill', function()
     local src = source
+    if not src or src <= 0 then return end
     local player = getPlayer(src)
     if not player then return end
     RemoveItem(src, Config.DrillItem, 1)
@@ -183,6 +215,7 @@ end)
 
 RegisterNetEvent('pl_atmrobbery:server:removeHackingDevice', function()
     local src = source
+    if not src or src <= 0 then return end
     local player = getPlayer(src)
     if not player then return end
     RemoveItem(src, Config.HackingItem, 1)
@@ -214,5 +247,6 @@ AddEventHandler('playerDropped', function()
     local src = source
     atmRobberyState[src] = nil
     ropeRobberyState[src] = nil
+    lastRobberyAttempt[src] = nil
 end)
 

@@ -49,7 +49,9 @@ AddEventHandler('playerDropped', function(reason)
         color = 'red',
         message = ('**%s** (%s) left...\n **Reason:** %s'):format(GetPlayerName(src), player.PlayerData.license, reason),
     })
-    player.Functions.Save()
+    if player.Functions and player.Functions.Save then
+        player.Functions.Save()
+    end
     QBX.Player_Buckets[src] = nil
     QBX.Players[src] = nil
 end)
@@ -170,13 +172,15 @@ local function onPlayerConnecting(name, _, deferrals)
     end, onError):next(function() end, onError)
 
     -- if conducting db checks for too long then raise error
+    local dbTimeoutSeconds = 30
     while databasePromise.state == 0 do
-        if os.clock() - databaseTime > 30 then
+        local elapsed = os.clock() - databaseTime
+        if elapsed > dbTimeoutSeconds then
             finishDeferral(locale('error.connecting_database_timeout'))
-            error(locale('error.connecting_database_timeout'))
+            lib.print.error(('Database check timed out after %.1fs for player %s'):format(elapsed, name))
             break
         end
-        Wait(1000)
+        Wait(500)
     end
 
     -- Add any additional defferals you may need!
@@ -199,7 +203,9 @@ end)
 -- `if LocalPlayer.state.isLoggedIn then` for the client side
 -- `if Player(source).state.isLoggedIn then` for the server side
 RegisterNetEvent('QBCore:Server:OnPlayerLoaded', function()
-    Player(source --[[@as Source]]).state:set('isLoggedIn', true, true)
+    local src = source --[[@as Source]]
+    if not src or src <= 0 then return end
+    Player(src).state:set('isLoggedIn', true, true)
 end)
 
 ---@param source Source
@@ -212,27 +218,27 @@ end)
 ---@param reason string
 RegisterNetEvent('QBCore:Server:CloseServer', function(reason)
     local src = source --[[@as Source]]
-    if IsPlayerAceAllowed(src --[[@as string]], 'admin') then
-        reason = reason or 'No reason specified'
-        serverConfig.closed = true
-        serverConfig.closedReason = reason
-        for k in pairs(QBX.Players) do
-            if not IsPlayerAceAllowed(k --[[@as string]], serverConfig.whitelistPermission) then
-                DropPlayer(k --[[@as string]], reason)
-            end
-        end
-    else
+    if not IsPlayerAceAllowed(src --[[@as string]], 'admin') then
         DropPlayer(src --[[@as string]], locale('error.no_permission'))
+        return
+    end
+    reason = reason or 'No reason specified'
+    serverConfig.closed = true
+    serverConfig.closedReason = reason
+    for k in pairs(QBX.Players) do
+        if not IsPlayerAceAllowed(k --[[@as string]], serverConfig.whitelistPermission) then
+            DropPlayer(k --[[@as string]], reason)
+        end
     end
 end)
 
 RegisterNetEvent('QBCore:Server:OpenServer', function()
     local src = source --[[@as Source]]
-    if IsPlayerAceAllowed(src --[[@as string]], 'admin') then
-        serverConfig.closed = false
-    else
+    if not IsPlayerAceAllowed(src --[[@as string]], 'admin') then
         DropPlayer(src --[[@as string]], locale('error.no_permission'))
+        return
     end
+    serverConfig.closed = false
 end)
 
 -- Player
@@ -255,9 +261,9 @@ end)
 ---@param meta 'hunger' | 'thirst' | 'stress'
 ---@param value number
 local function playerStateBagCheck(bagName, meta, value)
-    if not value then return end
+    if value == nil or type(value) ~= 'number' then return end
     local plySrc = GetPlayerFromStateBagName(bagName)
-    if not plySrc then return end
+    if not plySrc or plySrc == 0 then return end
     local player = QBX.Players[plySrc]
     if not player then return end
     if player.PlayerData.metadata[meta] == value then return end

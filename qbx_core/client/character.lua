@@ -171,6 +171,17 @@ local function destroyPreviewCam()
     FreezeEntityPosition(cache.ped, false)
 end
 
+local function restorePlayerPedState()
+    local ped = cache.ped
+    if not ped or ped == 0 then return end
+
+    SetEntityVisible(ped, true, false)
+    ResetEntityAlpha(ped)
+    SetEntityCollision(ped, true, true)
+    FreezeEntityPosition(ped, false)
+    ClearPedTasksImmediately(ped)
+end
+
 local function setupPreviewCam()
     SetTimecycleModifierStrength(1.0)
     FreezeEntityPosition(cache.ped, false)
@@ -364,6 +375,7 @@ local function spawnDefault()
     end
 
     destroyPreviewCam()
+    restorePlayerPedState()
 
     pcall(function()
         exports.spawnmanager:spawnPlayer({
@@ -394,6 +406,7 @@ local function spawnLastLocation()
     end
 
     destroyPreviewCam()
+    restorePlayerPedState()
 
     pcall(function()
         exports.spawnmanager:spawnPlayer({
@@ -471,6 +484,8 @@ local function createCharacter(cid)
         return false
     end
 
+    restorePlayerPedState()
+
     if GetResourceState('qbx_spawn') == 'missing' then
         spawnDefault()
     else
@@ -520,7 +535,7 @@ local function chooseCharacter()
 
     DoScreenFadeOut(500)
 
-    while not IsScreenFadedOut() and cache.ped ~= PlayerPedId() do
+    while not IsScreenFadedOut() or cache.ped ~= PlayerPedId() do
         Wait(0)
     end
 
@@ -610,6 +625,8 @@ local function chooseCharacter()
                         icon = 'play',
                         iconAnimation = config.characters.iconAnimation,
                         onSelect = function()
+                            restorePlayerPedState()
+
                             if not GetResourceState('mri_Qspawn'):find('start') then
                                 DoScreenFadeOut(10)
                             end
@@ -702,7 +719,7 @@ RegisterNetEvent('qbx_core:client:spawnNoApartments', function()
 
     Wait(500)
     destroyPreviewCam()
-    SetEntityVisible(cache.ped, true, false)
+    restorePlayerPedState()
 
     Wait(500)
     DoScreenFadeIn(250)

@@ -11,6 +11,7 @@ NetworkStartSoloTutorialSession()
 local previewCam = nil
 local randomLocation = config.characters.locations[math.random(1, #config.characters.locations)]
 local nationalities = {}
+local pendingCharacterCreationData = nil
 
 -- Lista de peds aleatórios para a tela de seleção
 local randomPeds = {
@@ -401,7 +402,6 @@ local function spawnDefault()
         Wait(0)
     end
 
-    TriggerEvent('qb-clothes:client:CreateFirstCharacter')
 end
 
 local function spawnLastLocation()
@@ -495,19 +495,12 @@ local function createCharacter(cid)
         return false
     end
 
-    restorePlayerPedState()
-
-    if GetResourceState('qbx_spawn') == 'missing' then
-        spawnDefault()
-    else
-        if config.characters.startingApartment then
-            TriggerEvent('apartments:client:setupSpawnUI', newData)
-        else
-            TriggerEvent('qbx_core:client:spawnNoApartments')
-        end
-    end
+    pendingCharacterCreationData = newData
 
     destroyPreviewCam()
+    restorePlayerPedState()
+
+    TriggerEvent('qb-clothes:client:CreateFirstCharacter')
     return true
 end
 
@@ -740,11 +733,29 @@ RegisterNetEvent('qbx_core:client:spawnNoApartments', function()
     TriggerServerEvent('qb-houses:server:SetInsideMeta', 0, false)
     TriggerServerEvent('qb-apartments:server:SetInsideMeta', 0, 0, false)
     TriggerEvent('qb-weathersync:client:EnableSync')
-    TriggerEvent('qb-clothes:client:CreateFirstCharacter')
+end)
+
+RegisterNetEvent('qbx_core:client:firstCharacterAppearanceFinished', function()
+    if not pendingCharacterCreationData then return end
+
+    TriggerServerEvent('qbx_core:server:characterCreationCompleted')
+
+    if GetResourceState('mri_Qspawn'):find('start') then
+        exports['mri_Qspawn']:chooseSpawn()
+    elseif GetResourceState('qbx_apartments'):find('start') and config.characters.startingApartment then
+        TriggerEvent('apartments:client:setupSpawnUI', pendingCharacterCreationData)
+    elseif GetResourceState('qbx_spawn'):find('start') then
+        TriggerEvent('qb-spawn:client:setupSpawns', pendingCharacterCreationData, true)
+    else
+        spawnDefault()
+    end
+
+    pendingCharacterCreationData = nil
 end)
 
 -- Forçar volta ao menu (usado pelo server quando dá erro)
 RegisterNetEvent('qbx_core:client:forceCharacterMenu', function()
+    pendingCharacterCreationData = nil
     destroyPreviewCam()
     chooseCharacter()
 end)

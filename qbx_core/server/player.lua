@@ -1028,7 +1028,13 @@ function CreatePlayer(playerData, Offline)
         GlobalState.PlayerCount += 1
         UpdatePlayerData(self.PlayerData.source)
         Player(self.PlayerData.source).state:set('loadInventory', true, true)
-        TriggerEvent('QBCore:Server:PlayerLoaded', self)
+
+        local creationInProgress = self.PlayerData.metadata
+            and self.PlayerData.metadata.characterCreationInProgress == true
+
+        if not creationInProgress then
+            TriggerEvent('QBCore:Server:PlayerLoaded', self)
+        end
     end
 
     return self

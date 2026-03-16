@@ -2,12 +2,14 @@ local Bridge = {}
 
 if Shared.Framework == "qb" then
     QBCore = exports['qb-core']:GetCoreObject()
+elseif Shared.Framework == 'qbx' then
+    QBCore = exports['qbx_core']:GetCoreObject()
 elseif Shared.Framework == "esx" then
     ESX = exports['es_extended']:getSharedObject()
 end
 
 function Bridge:GetPlayerCitizenId(id)
-    if Shared.Framework == 'qb' then
+    if Shared.Framework == 'qb' or Shared.Framework == 'qbx' then
         return QBCore.Functions.GetPlayer(id).PlayerData.citizenid
     elseif Shared.Framework == 'esx' then
         local xPlayer = ESX.GetPlayerFromId(id)
@@ -19,7 +21,7 @@ function Bridge:GetPlayerCitizenId(id)
 end
 
 function Bridge:GetPlayer(id)
-    if Shared.Framework == 'qb' then
+    if Shared.Framework == 'qb' or Shared.Framework == 'qbx' then
         return QBCore.Functions.GetPlayer(id)
     elseif Shared.Framework == 'esx' then
         return ESX.GetPlayerFromId(id)
@@ -29,7 +31,7 @@ function Bridge:GetPlayer(id)
 end
 
 function Bridge:GetPlayerJob(id)
-    if Shared.Framework == 'qb' then
+    if Shared.Framework == 'qb' or Shared.Framework == 'qbx' then
         local Player = QBCore.Functions.GetPlayer(id)
         return Player.PlayerData.job.name
     elseif Shared.Framework == 'esx' then
@@ -77,6 +79,29 @@ function Bridge:GetPlayerItemByName(src, item)
         local Player = self:GetPlayer(src)
         return Player.Functions.GetItemByName(item)
     end
+end
+
+function Bridge:HasItem(src, item, amount)
+    amount = amount or 1
+    local found = self:GetPlayerItemByName(src, item)
+    if not found then return false end
+    if Shared.Inventory == 'ox' then
+        return (found.count or 0) >= amount
+    end
+    return (found.amount or 0) >= amount
+end
+
+function Bridge:TryRemoveItem(src, item, amount)
+    amount = amount or 1
+    if Shared.Inventory == 'ox' then
+        return exports.ox_inventory:RemoveItem(src, item, amount)
+    end
+
+    local Player = self:GetPlayer(src)
+    if not Player then return false end
+    local itemData = Player.Functions.GetItemByName(item)
+    if not itemData or (itemData.amount or 0) < amount then return false end
+    return Player.Functions.RemoveItem(item, amount, itemData.slot)
 end
 
 function Bridge:RemovePlayerKeyItem(src, info)

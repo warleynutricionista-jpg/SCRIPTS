@@ -1,150 +1,90 @@
 local VehicleKeys = require 'client.interface'
 local VehicleSecurity = require 'client.modules.vehicle_security'
+local Action = require 'client.modules.action_helper'
 
 local Hotwire = {
     isHotwiring = false,
-    activeVehicle = 0
+    activeVehicle = 0,
+    activeToken = nil
 }
 
 function Hotwire:ResetState(showCancelledMessage)
     self.isHotwiring = false
     self.activeVehicle = 0
-
-    if lib.progressActive() then
-        lib.cancelProgress()
+    if self.activeToken then
+        Action:CancelServerAction(self.activeToken)
+        self.activeToken = nil
     end
-
-    if showCancelledMessage then
-        lib.notify({
-            title = 'Ligação direta',
-            description = 'Processo interrompido.',
-            type = 'error'
-        })
-    end
+    if lib.progressActive() then lib.cancelProgress() end
+    if showCancelledMessage then Action:Notify(Shared.text.actionCancelled, 'error') end
 end
 
 function Hotwire:CanContinueHotwire(vehicle)
-    return vehicle ~= 0
-        and DoesEntityExist(vehicle)
-        and VehicleKeys.currentVehicle ~= 0
-        and VehicleKeys.currentVehicle == vehicle
-        and IsPedInVehicle(cache.ped, vehicle, false)
-        and GetPedInVehicleSeat(vehicle, -1) == cache.ped
+    return vehicle ~= 0 and DoesEntityExist(vehicle) and VehicleKeys.currentVehicle == vehicle
+        and IsPedInVehicle(cache.ped, vehicle, false) and GetPedInVehicleSeat(vehicle, -1) == cache.ped
         and not IsEntityDead(cache.ped)
 end
 
-function Hotwire:WatchInterruption(vehicle)
-    CreateThread(function()
-        while self.isHotwiring and self.activeVehicle == vehicle do
-            if not self:CanContinueHotwire(vehicle) then
-                self:ResetState(true)
-                return
-            end
-            Wait(100)
-        end
-    end)
-end
-
 function Hotwire:RunHotwireStage(label, duration, vehicle)
-    local completed = lib.progressBar({
+    local completed = Action:RunProgress({
         label = label,
         duration = duration,
-        position = 'bottom',
-        allowCuffed = false,
-        useWhileDead = false,
-        canCancel = true,
-        disable = {
-            car = true,
-            move = true,
-            combat = true
-        },
-        anim = {
-            dict = 'anim@amb@clubhouse@tutorial@bkr_tut_ig3@',
-            clip = 'machinic_loop_mechandplayer'
-        }
+        disable = { car = true, move = true, combat = true },
+        anim = Action:PlayMechanicAnim()
     })
-
     return completed and self:CanContinueHotwire(vehicle)
 end
 
-function Hotwire:RunSequence(vehicle)
-    local hotwireTime = math.random(Shared.hotwire.minTime, Shared.hotwire.maxTime)
-    local stageOneTime = math.floor(hotwireTime * 0.45)
-    local stageTwoTime = hotwireTime - stageOneTime
-
-    VehicleSecurity:TriggerTheftAlert(vehicle, ('Tentativa de ligação direta em %s'):format(GetVehicleNumberPlateText(vehicle)), hotwireTime)
-
-    local firstStage = self:RunHotwireStage(Shared.hotwire.stageOneLabel, stageOneTime, vehicle)
-    if not firstStage then return false, 'cancelled' end
-
-    local secondStage = self:RunHotwireStage(Shared.hotwire.stageTwoLabel, stageTwoTime, vehicle)
-    if not secondStage then return false, 'cancelled' end
-
-    local minigameResult = VehicleSecurity:RunHotwireMinigame()
-    if not minigameResult then
-        return false, 'minigame_failed'
-    end
-
-    if not self:CanContinueHotwire(vehicle) then
-        return false, 'cancelled'
-    end
-
-    local level = VehicleSecurity:GetReputationLevel('hotwiring')
-    local successChance = Shared.hotwire.chance * level
-
-    if math.random() <= successChance then
-        VehicleSecurity:UpdateReputation('hotwiring', 1)
-        TriggerServerEvent('mm_carkeys:server:acquiretempvehiclekeys', VehicleKeys.currentVehiclePlate)
-        SetVehicleEngineOn(vehicle, true, false, true)
-        VehicleKeys.isEngineRunning = true
-        return true
-    end
-
-    return false, 'chance_failed'
-end
-
 function Hotwire:HotwireHandler()
-    if self.isHotwiring then return end
-    if VehicleKeys.currentVehicle == 0 then return end
-    if not VehicleKeys.isInDrivingSeat then return end
+    if self.isHotwiring or VehicleKeys.currentVehicle == 0 or not VehicleKeys.isInDrivingSeat then return end
 
     local vehicle = VehicleKeys.currentVehicle
-
-    if VehicleSecurity:IsIgnitionJammed(vehicle) then
-        VehicleSecurity:NotifyIgnitionJammed()
+    local ok, payload = lib.callback.await('mm_carkeys:server:beginHotwire', false, NetworkGetNetworkIdFromEntity(vehicle))
+    if not ok then
+        local map = {
+            missing_item = Shared.text.missingHotwireTool,
+            permanent_damage = Shared.text.mechanicRequired,
+            too_far = Shared.text.tooFar,
+            busy = Shared.text.actionBlocked
+        }
+        Action:Notify(map[payload] or Shared.text.actionBlocked, 'error')
         return
     end
 
     self.isHotwiring = true
     self.activeVehicle = vehicle
+    self.activeToken = payload.token
 
-    lib.hideTextUI()
-    VehicleKeys.showTextUi = false
-    self:WatchInterruption(vehicle)
+    local duration = payload.duration
+    local stageOne = math.floor(duration * 0.45)
+    local stageTwo = duration - stageOne
 
-    local success, reason = self:RunSequence(vehicle)
+    local firstStage = self:RunHotwireStage(Shared.hotwire.stageOneLabel, stageOne, vehicle)
+    local secondStage = firstStage and self:RunHotwireStage(Shared.hotwire.stageTwoLabel, stageTwo, vehicle)
+    local minigameOk = secondStage and VehicleSecurity:RunHotwireMinigame() or false
+
+    local success, reason = lib.callback.await('mm_carkeys:server:completeHotwire', false, self.activeToken, minigameOk)
     TriggerServerEvent('hud:server:GainStress', Shared.hotwire.stressIncrease)
 
-    if self.activeVehicle == vehicle then
-        self.isHotwiring = false
-        self.activeVehicle = 0
-    end
+    self.activeToken = nil
+    self.isHotwiring = false
+    self.activeVehicle = 0
 
     if success then
+        SetVehicleEngineOn(vehicle, true, false, true)
+        VehicleKeys.isEngineRunning = true
+        Action:Notify(Shared.text.hotwireSuccess, 'success')
         return
     end
 
     VehicleSecurity:ApplyIgnitionFailureDamage(vehicle, Shared.ignition.hotwireFailDamage)
-
-    if reason == 'chance_failed' then
-        lib.notify({ title = 'Falhou', description = 'Você não conseguiu ligar a ignição.', type = 'error' })
-    elseif reason == 'minigame_failed' then
-        lib.notify({ title = 'Falhou', description = 'Você errou a ligação direta.', type = 'error' })
-    end
-
-    if VehicleKeys.currentVehicle ~= 0 and VehicleKeys.isInDrivingSeat and not VehicleKeys.showTextUi then
-        lib.showTextUI('Ligação direta', { position = 'right-center', icon = 'h' })
-        VehicleKeys.showTextUi = true
+    if reason == 'permanent_damage' then
+        Action:Notify(Shared.text.irreversibleElectricalDamage, 'error')
+        if Shared.hotwire.blockEngineOnPermanentDamage then
+            SetVehicleEngineOn(vehicle, false, false, true)
+        end
+    else
+        Action:Notify(Shared.text.hotwireFailed, 'error')
     end
 end
 

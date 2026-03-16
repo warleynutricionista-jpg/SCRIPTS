@@ -1,138 +1,99 @@
+local cfg = Config or {}
+
 Shared = {
     debug = {
-        ignition = false,
-        hotwire = false
+        ignition = cfg.Debug or false,
+        hotwire = cfg.Debug or false
     },
+    text = cfg.Locale or {},
     ignition = {
-        lockpickFailDamage = 45.0, -- engine health damage on failed lockpick
-        hotwireFailDamage = 60.0, -- engine health damage on failed hotwire/interruption
-        jammedThreshold = 200.0 -- if engine health goes below this value, ignition is jammed
+        lockpickFailDamage = 45.0,
+        hotwireFailDamage = 60.0,
+        jammedThreshold = 200.0
     },
     alert = {
-        silentClasses = {
-            [6] = true, -- Sports
-            [7] = true -- Super
-        },
-        dispatchEvent = 'dispatch:server:notify' -- server event used when silent alarms are triggered
+        silentClasses = { [6] = true, [7] = true },
+        dispatchEvent = 'dispatch:server:notify'
     },
     reputation = {
         enabled = true,
         resource = 'cw-rep',
         maxLevel = 8
     },
-    LockNPCVehicle = false, -- lock all npc vehicles
-    playerDraggable = true, -- allow players to drag other players
-    toggleLightsOnlyRemote = true, -- true if you want the vehicle lights to toggle only when not in the vehicle
-    keepVehicleEngineOn = true, -- keep the engine on when exiting a vehicle
-    keepKeysInVehicle = true, -- keep keys in vehicle
+    LockNPCVehicle = false,
+    playerDraggable = true,
+    toggleLightsOnlyRemote = true,
+    keepVehicleEngineOn = true,
+    keepKeysInVehicle = true,
     steal = {
-        available = true, -- allow players to carjack vehicles
-        getKey = "permanent", -- "temporary", "permanent", "none"
-        label = "Assaltando...",
+        available = true,
+        getKey = 'permanent',
+        label = 'Assaltando...',
         minTime = 5000,
         maxTime = 7000,
         stressIncrease = math.random(1, 3),
         chance = {
-            ["2685387236"] = 0.0, -- melee
-            ["416676503"] = 0.5, -- handguns
-            ["-957766203"] = 0.75, -- SMG
-            ["860033945"] = 0.90, -- shotgun
-            ["970310034"] = 0.90, -- assault
-            ["1159398588"] = 0.99, -- LMG
-            ["3082541095"] = 0.99, -- sniper
-            ["2725924767"] = 0.99, -- heavy
-            ["1548507267"] = 0.0, -- throwable
-            ["4257178988"] = 0.0 -- misc
+            ['2685387236'] = 0.0, ['416676503'] = 0.5, ['-957766203'] = 0.75,
+            ['860033945'] = 0.90, ['970310034'] = 0.90, ['1159398588'] = 0.99,
+            ['3082541095'] = 0.99, ['2725924767'] = 0.99, ['1548507267'] = 0.0, ['4257178988'] = 0.0
         },
         armedNpcChance = 0.35,
-        npcGunWeapons = {
-            'WEAPON_PISTOL',
-            'WEAPON_COMBATPISTOL',
-            'WEAPON_APPISTOL',
-            'WEAPON_MICROSMG'
-        },
+        npcGunWeapons = { 'WEAPON_PISTOL', 'WEAPON_COMBATPISTOL', 'WEAPON_APPISTOL', 'WEAPON_MICROSMG' },
         npcAccuracy = 40,
-        npcAggressiveness = 2
+        npcAggressiveness = 2,
     },
-    lockpick = {
-        minigameScript = "ox_lib", -- "ox_lib", "inside-lockpicking"
-        stressIncrease = math.random(1, 3),
-        breakChance = 0.5,
-        advancedBreakChance = 0.1
-    },
-    blacklistedClasses = {
-        [13] = true, -- Bicicletas
-        [14] = true, -- Barcos
-        [15] = true, -- Helicópteros
-        [16] = true, -- Aviões
-        [21] = true -- Trens
-    },
+    blacklistedClasses = { [13] = true, [14] = true, [15] = true, [16] = true, [21] = true },
     grab = {
-        -- grab a dead npc out of a vehicle
         alive = true,
-        leaveKeysOnVehicle = true, -- leave keys on vehicle
-        label = "Roubando veículo...",
-        searchLabel = "Procurando chaves no interior...",
-        minTime = 5000,
-        maxTime = 7000,
-        searchMinTime = 6000,
-        searchMaxTime = 9000,
-        keyLocationChance = {
-            driver = 0.45,
-            glovebox = 0.35,
-            sunvisor = 0.20
-        }
+        leaveKeysOnVehicle = true,
+        label = 'Roubando veículo...'
     },
     hotwire = {
-        -- hotwire a vehicle
-        available = true,
-        label = "Fazendo ligação direta...",
-        stageOneLabel = "Removendo proteção da ignição...",
-        stageTwoLabel = "Conectando fios da ignição...",
-        chance = 0.1,
-        minTime = 8500,
-        maxTime = 12000,
+        available = cfg.Hotwire and cfg.Hotwire.Enabled ~= false or true,
+        stageOneLabel = 'Removendo proteção da ignição...',
+        stageTwoLabel = 'Conectando fios da ignição...',
+        chance = cfg.Hotwire and cfg.Hotwire.SuccessChance or 0.25,
+        minTime = cfg.Hotwire and cfg.Hotwire.Duration or 9000,
+        maxTime = cfg.Hotwire and cfg.Hotwire.Duration or 9000,
         stressIncrease = math.random(1, 3),
-        minigame = 'ox_lib', -- 'ox_lib' or 'rep-enginewire'
-        skillDifficulty = { 'easy', 'medium', 'medium' }
+        minigame = 'ox_lib',
+        skillDifficulty = { 'easy', 'medium', 'medium' },
+        requiredItem = cfg.Hotwire and cfg.Hotwire.RequiredItem or 'screwdriver',
+        consumeItem = cfg.Hotwire and cfg.Hotwire.ConsumeItem ~= false or true,
+        severeDamageChance = cfg.Hotwire and cfg.Hotwire.SevereDamageChance or 0.70,
+        irreversibleDamageChance = cfg.Hotwire and cfg.Hotwire.PermanentElectricalDamageChance or 0.45,
+        blockIfPermanentDamage = cfg.Hotwire and cfg.Hotwire.BlockIfPermanentDamage ~= false or true,
+        blockEngineOnPermanentDamage = cfg.Hotwire and cfg.Hotwire.BlockEngineOnPermanentDamage ~= false or true
     },
+    lockpick = {
+        minigameScript = 'ox_lib',
+        stressIncrease = math.random(1, 3),
+        breakChance = cfg.Lockpick and cfg.Lockpick.BreakChance or 0.5,
+        advancedBreakChance = cfg.Lockpick and cfg.Lockpick.AdvancedBreakChance or 0.1,
+        stages = cfg.Lockpick and cfg.Lockpick.Stages or 6,
+        failMode = cfg.Lockpick and cfg.Lockpick.FailMode or 'fail',
+        regressAmount = cfg.Lockpick and cfg.Lockpick.RegressAmount or 1,
+        stageDuration = cfg.Lockpick and cfg.Lockpick.StageDuration or 1200
+    },
+    security = {
+        actionCooldownMs = cfg.Security and cfg.Security.ActionCooldownMs or 1200,
+        maxInteractDistance = cfg.Security and cfg.Security.MaxInteractDistance or 5.0,
+    },
+    searchKey = cfg.SearchKey or {},
+    npcSearch = cfg.NPCSearch or {},
     BlackListedWeapon = {
-        "WEAPON_UNARMED",
-        "WEAPON_Knife",
-        "WEAPON_Nightstick",
-        "WEAPON_HAMMER",
-        "WEAPON_Bat",
-        "WEAPON_Crowbar",
-        "WEAPON_Golfclub",
-        "WEAPON_Bottle",
-        "WEAPON_Dagger",
-        "WEAPON_Hatchet",
-        "WEAPON_KnuckleDuster",
-        "WEAPON_Machete",
-        "WEAPON_Flashlight",
-        "WEAPON_SwitchBlade",
-        "WEAPON_Poolcue",
-        "WEAPON_Wrench",
-        "WEAPON_Battleaxe",
-        "WEAPON_Grenade",
-        "WEAPON_StickyBomb",
-        "WEAPON_ProximityMine",
-        "WEAPON_BZGas",
-        "WEAPON_Molotov",
-        "WEAPON_FireExtinguisher",
-        "WEAPON_PetrolCan",
-        "WEAPON_Flare",
-        "WEAPON_Ball",
-        "WEAPON_Snowball",
-        "WEAPON_SmokeGrenade"
+        'WEAPON_UNARMED', 'WEAPON_Knife', 'WEAPON_Nightstick', 'WEAPON_HAMMER', 'WEAPON_Bat',
+        'WEAPON_Crowbar', 'WEAPON_Golfclub', 'WEAPON_Bottle', 'WEAPON_Dagger', 'WEAPON_Hatchet',
+        'WEAPON_KnuckleDuster', 'WEAPON_Machete', 'WEAPON_Flashlight', 'WEAPON_SwitchBlade',
+        'WEAPON_Poolcue', 'WEAPON_Wrench', 'WEAPON_Battleaxe', 'WEAPON_Grenade', 'WEAPON_StickyBomb',
+        'WEAPON_ProximityMine', 'WEAPON_BZGas', 'WEAPON_Molotov', 'WEAPON_FireExtinguisher',
+        'WEAPON_PetrolCan', 'WEAPON_Flare', 'WEAPON_Ball', 'WEAPON_Snowball', 'WEAPON_SmokeGrenade'
     }
 }
 
--- Backward compatibility aliases
 Shared.dispatch = { event = Shared.alert.dispatchEvent }
 Shared.luxuryClasses = Shared.alert.silentClasses
 Shared.NPCHasGunChance = Shared.steal.armedNpcChance
-Shared.GrabKeysOnDriverChance = Shared.grab.keyLocationChance.driver
-
+Shared.GrabKeysOnDriverChance = 0.45
 Shared.ignition.failDamageMin = Shared.ignition.lockpickFailDamage
 Shared.ignition.failDamageMax = Shared.ignition.hotwireFailDamage

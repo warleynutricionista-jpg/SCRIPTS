@@ -1,19 +1,14 @@
 local VehicleKeys = require 'client.interface'
 local VehicleSecurity = require 'client.modules.vehicle_security'
+local Action = require 'client.modules.action_helper'
 
-local LockPick = {
-    lockpicking = false,
-}
+local LockPick = { lockpicking = false, activeToken = nil }
 
 function LockPick:Minigame()
-    if Shared.lockpick.minigameScript == "inside-lockpicking" then
-        local result = exports['inside-lockpicking']:StartLockPicking({
-            difficulty = 'easy',
-            requiredAmount = 2
-        })
-        return result == "success"
+    if Shared.lockpick.minigameScript == 'inside-lockpicking' then
+        local result = exports['inside-lockpicking']:StartLockPicking({ difficulty = 'easy', requiredAmount = 2 })
+        return result == 'success'
     end
-
     return lib.skillCheck('easy')
 end
 
@@ -25,84 +20,103 @@ function LockPick:BreakLockPick(isAdvanced)
     end
 end
 
-function LockPick:LockPickDoor(isAdvanced)
-    local playerPos = GetEntityCoords(cache.ped)
-    local vehicle = lib.getClosestVehicle(playerPos, 3.0, false)
-    if not vehicle or GetVehicleDoorLockStatus(vehicle) == 1 then return end
-
-    if VehicleSecurity:IsIgnitionJammed(vehicle) then
-        VehicleSecurity:NotifyIgnitionJammed()
-        return
+function LockPick:RunServerStages(vehicle, mode)
+    local ok, payload = lib.callback.await('mm_carkeys:server:beginLockpick', false, NetworkGetNetworkIdFromEntity(vehicle), mode)
+    if not ok then
+        local map = {
+            too_far = Shared.text.tooFar,
+            busy = Shared.text.actionBlocked,
+            permanent_damage = Shared.text.mechanicRequired
+        }
+        Action:Notify(map[payload] or Shared.text.actionBlocked, 'error')
+        return false, payload
     end
 
+    self.activeToken = payload.token
+    local stage = payload.stage
+    local required = payload.requiredStages
+
+    while stage <= required do
+        local label = Shared.text.lockpickProgress:format(stage, required)
+        local progress = Action:RunProgress({
+            label = label,
+            duration = Shared.lockpick.stageDuration,
+            anim = Action:PlayMechanicAnim()
+        })
+
+        if not progress then
+            TriggerServerEvent('mm_carkeys:server:cancelAction', self.activeToken)
+            self.activeToken = nil
+            return false, 'cancelled'
+        end
+
+        local stageResult = self:Minigame()
+        local serverOk, response = lib.callback.await('mm_carkeys:server:lockpickStage', false, self.activeToken, stageResult)
+        if serverOk and response == 'completed' then
+            self.activeToken = nil
+            return true
+        end
+
+        if type(response) == 'table' and response.stage then
+            stage = response.stage
+        else
+            self.activeToken = nil
+            return false, response
+        end
+    end
+
+    self.activeToken = nil
+    return false, 'failed'
+end
+
+function LockPick:LockPickDoor(isAdvanced)
+    local vehicle = lib.getClosestVehicle(GetEntityCoords(cache.ped), 3.0, false)
+    if not vehicle or GetVehicleDoorLockStatus(vehicle) == 1 then return end
     if self.lockpicking then return end
+
     self.lockpicking = true
-
-    lib.requestAnimDict("anim@amb@clubhouse@tutorial@bkr_tut_ig3@")
-    TaskPlayAnim(cache.ped, 'anim@amb@clubhouse@tutorial@bkr_tut_ig3@', 'machinic_loop_mechandplayer', 3.0, 3.0, -1, 49, 0, false, false, false)
-
-    local result = self:Minigame()
+    local result, reason = self:RunServerStages(vehicle, 'door')
     TriggerServerEvent('hud:server:GainStress', Shared.lockpick.stressIncrease)
     self:BreakLockPick(isAdvanced)
     self.lockpicking = false
-
-    StopAnimTask(cache.ped, "anim@amb@clubhouse@tutorial@bkr_tut_ig3@", "machinic_loop_mechandplayer", 1.0)
 
     if result then
         TriggerServerEvent('mm_carkeys:server:setVehLockState', NetworkGetNetworkIdFromEntity(vehicle), 1)
         SetVehicleDoorsLockedForAllPlayers(vehicle, false)
-        lib.notify({ description = 'Veículo destrancado', type = 'success' })
-        VehicleSecurity:UpdateReputation('lockpicking', 1)
-        SetVehicleLights(vehicle, 2)
-        Wait(250)
-        SetVehicleLights(vehicle, 1)
-        Wait(200)
-        SetVehicleLights(vehicle, 0)
+        Action:Notify(Shared.text.vehicleUnlocked, 'success')
         return
     end
 
-    VehicleSecurity:TriggerTheftAlert(vehicle, ('Tentativa de furto em %s'):format(GetVehicleNumberPlateText(vehicle)), 60000)
-    VehicleSecurity:ApplyIgnitionFailureDamage(vehicle, Shared.ignition.lockpickFailDamage)
-    lib.notify({ title = 'Falhou', description = 'Falhou em destrancar a porta!', type = 'error' })
+    if reason == 'cancelled' then
+        Action:Notify(Shared.text.lockpickCancelled, 'error')
+    else
+        VehicleSecurity:ApplyIgnitionFailureDamage(vehicle, Shared.ignition.lockpickFailDamage)
+        Action:Notify(Shared.text.lockpickFailed, 'error')
+    end
 end
 
 function LockPick:LockPickEngine(isAdvanced)
     if VehicleKeys.currentVehicle == 0 or GetIsVehicleEngineRunning(VehicleKeys.currentVehicle) then return end
-
-    if VehicleSecurity:IsIgnitionJammed(VehicleKeys.currentVehicle) then
-        VehicleSecurity:NotifyIgnitionJammed()
-        return
-    end
-
-    local vehClass = GetVehicleClass(VehicleKeys.currentVehicle)
-    if Shared.blacklistedClasses[vehClass] then
-        lib.notify({ description = 'Esse veículo não pode ser ligado com lockpick.', type = 'error' })
-        return
-    end
-
     if self.lockpicking then return end
+
     self.lockpicking = true
-
-    lib.requestAnimDict("anim@amb@clubhouse@tutorial@bkr_tut_ig3@")
-    TaskPlayAnim(cache.ped, 'anim@amb@clubhouse@tutorial@bkr_tut_ig3@', 'machinic_loop_mechandplayer', 3.0, 3.0, -1, 49, 0, false, false, false)
-
-    local result = self:Minigame()
+    local result, reason = self:RunServerStages(VehicleKeys.currentVehicle, 'engine')
     TriggerServerEvent('hud:server:GainStress', Shared.lockpick.stressIncrease)
     self:BreakLockPick(isAdvanced)
     self.lockpicking = false
 
-    StopAnimTask(cache.ped, "anim@amb@clubhouse@tutorial@bkr_tut_ig3@", "machinic_loop_mechandplayer", 1.0)
-
     if result then
-        TriggerServerEvent('mm_carkeys:server:acquiretempvehiclekeys', VehicleKeys.currentVehiclePlate)
         SetVehicleEngineOn(VehicleKeys.currentVehicle, true, true, true)
         VehicleKeys.isEngineRunning = true
         return
     end
 
-    VehicleSecurity:TriggerTheftAlert(VehicleKeys.currentVehicle, ('Tentativa de furto em %s'):format(VehicleKeys.currentVehiclePlate), 60000)
-    VehicleSecurity:ApplyIgnitionFailureDamage(VehicleKeys.currentVehicle, Shared.ignition.lockpickFailDamage)
-    lib.notify({ description = 'Falhou em ligar a ignição!', type = 'error' })
+    if reason == 'cancelled' then
+        Action:Notify(Shared.text.lockpickCancelled, 'error')
+    else
+        VehicleSecurity:ApplyIgnitionFailureDamage(VehicleKeys.currentVehicle, Shared.ignition.lockpickFailDamage)
+        Action:Notify(Shared.text.lockpickFailed, 'error')
+    end
 end
 
 return LockPick

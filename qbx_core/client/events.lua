@@ -10,8 +10,14 @@ RegisterNetEvent('QBCore:Client:OnPlayerLoaded', function()
 
     NetworkEndTutorialSession()
 
+    local tutorialTimeout = 100
     while NetworkIsInTutorialSession() do
         Wait(0)
+        tutorialTimeout -= 1
+        if tutorialTimeout <= 0 then
+            lib.print.warn('Tutorial session exit timed out')
+            break
+        end
     end
 
     local motd = GetConvar('qbx:motd', '')

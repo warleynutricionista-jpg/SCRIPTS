@@ -35,14 +35,36 @@ function functions.SpawnVehicle(source, model, coords, warp)
     if not coords then coords = GetEntityCoords(ped) end
     local heading = coords.w and coords.w or 0.0
     local veh = CreateVehicle(model, coords.x, coords.y, coords.z, heading, true, true)
-    while not DoesEntityExist(veh) do Wait(0) end
+    local timeout = 100
+    while not DoesEntityExist(veh) do
+        Wait(0)
+        timeout -= 1
+        if timeout <= 0 then
+            lib.print.error('SpawnVehicle: entity creation timed out')
+            return veh
+        end
+    end
     if warp then
+        timeout = 100
         while GetVehiclePedIsIn(ped, false) ~= veh do
             Wait(0)
             TaskWarpPedIntoVehicle(ped, veh, -1)
+            timeout -= 1
+            if timeout <= 0 then
+                lib.print.error('SpawnVehicle: warp into vehicle timed out')
+                break
+            end
         end
     end
-    while NetworkGetEntityOwner(veh) ~= source do Wait(0) end
+    timeout = 100
+    while NetworkGetEntityOwner(veh) ~= source do
+        Wait(0)
+        timeout -= 1
+        if timeout <= 0 then
+            lib.print.error('SpawnVehicle: entity owner sync timed out')
+            break
+        end
+    end
     return veh
 end
 

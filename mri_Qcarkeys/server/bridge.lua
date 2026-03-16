@@ -79,6 +79,29 @@ function Bridge:GetPlayerItemByName(src, item)
     end
 end
 
+function Bridge:HasItem(src, item, amount)
+    amount = amount or 1
+    local found = self:GetPlayerItemByName(src, item)
+    if not found then return false end
+    if Shared.Inventory == 'ox' then
+        return (found.count or 0) >= amount
+    end
+    return (found.amount or 0) >= amount
+end
+
+function Bridge:TryRemoveItem(src, item, amount)
+    amount = amount or 1
+    if Shared.Inventory == 'ox' then
+        return exports.ox_inventory:RemoveItem(src, item, amount)
+    end
+
+    local Player = self:GetPlayer(src)
+    if not Player then return false end
+    local itemData = Player.Functions.GetItemByName(item)
+    if not itemData or (itemData.amount or 0) < amount then return false end
+    return Player.Functions.RemoveItem(item, amount, itemData.slot)
+end
+
 function Bridge:RemovePlayerKeyItem(src, info)
     local items = self:GetPlayerItemsByName(src, 'vehiclekey')
     for _, v in pairs(items) do

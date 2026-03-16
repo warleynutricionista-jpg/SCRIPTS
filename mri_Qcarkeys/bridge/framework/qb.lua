@@ -49,7 +49,7 @@ if Shared.Framework == 'qb' then
     end)
 
     if Shared.Inventory == 'qb' then
-        RegisterNetEvent('QBCore:Player:SetPlayerData', function(val)
+        AddEventHandler('QBCore:Player:SetPlayerData', function(val)
             playerItems = val.items
             KeyManagement:SetVehicleKeys()
             VehicleKeys:Init()

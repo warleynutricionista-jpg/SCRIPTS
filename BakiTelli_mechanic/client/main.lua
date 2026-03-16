@@ -4,7 +4,6 @@ local ClientState = {
     zones = {},
     targetZoneIds = {},
     textShown = false,
-    fallbackReady = false,
     useTarget = false,
     menuCooldownUntil = 0,
     playerDead = false
@@ -48,13 +47,13 @@ local function clearTextUi()
 end
 
 local function safeState()
-    local ok, state = pcall(lib.callback.await, 'bakitelli_mechanic:server:getState', false)
-    if not ok or not state then
+    local ok, hasAccess, state = pcall(lib.callback.await, 'bakitelli_mechanic:server:getState', false)
+    if not ok then
         notify('error', L('state_unavailable'))
         return nil
     end
 
-    if state == false then
+    if not hasAccess or type(state) ~= 'table' then
         notify('error', L('no_permission'))
         return nil
     end
@@ -129,19 +128,21 @@ local function openServiceMenu()
     lib.showContext('bakitelli_mechanic_services')
 end
 
-local function openVehicleMenu(state)
+local function openVehicleMenu(state, stationId)
     local options = {}
+
     for model, label in pairs(Config.ServiceVehicles) do
         options[#options + 1] = {
             title = label,
             icon = 'truck',
             disabled = state.hasVehicleOut,
             onSelect = function()
-                local ok, resp = lib.callback.await('bakitelli_mechanic:server:spawnServiceVehicle', false, model)
+                local ok, resp = lib.callback.await('bakitelli_mechanic:server:spawnServiceVehicle', false, stationId, model)
                 if not ok then
                     notify('error', resp or L('service_failed'))
                     return
                 end
+
                 notify('success', L('service_vehicle_spawned'))
             end
         }
@@ -159,6 +160,7 @@ local function openVehicleMenu(state)
                 notify('error', message or L('service_failed'))
                 return
             end
+
             notify('success', message)
         end
     }
@@ -172,7 +174,7 @@ local function openVehicleMenu(state)
     lib.showContext('bakitelli_mechanic_vehicles')
 end
 
-local function openMainMenu()
+local function openMainMenu(stationId)
     if ClientState.menuBusy or inMenuCooldown() then
         return
     end
@@ -207,7 +209,7 @@ local function openMainMenu()
             icon = 'car-side',
             disabled = state.requireDuty and not state.onDuty,
             onSelect = function()
-                openVehicleMenu(state)
+                openVehicleMenu(state, stationId)
             end
         }
     }
@@ -241,6 +243,7 @@ local function addFallbackZone(point, action)
                     lib.showTextUI(L('use_station'))
                     ClientState.textShown = true
                 end
+
                 if IsControlJustReleased(0, 38) then
                     action()
                 end
@@ -264,7 +267,9 @@ local function registerTargetInteractions()
                     name = ('baki_main_%s'):format(i),
                     label = L('open_mechanic_menu'),
                     icon = 'fa-solid fa-wrench',
-                    onSelect = openMainMenu
+                    onSelect = function()
+                        openMainMenu(i)
+                    end
                 }
             }
         })
@@ -297,13 +302,14 @@ local function registerFallbackInteractions()
 
     for i = 1, #Config.Stations do
         local station = Config.Stations[i]
-        addFallbackZone(station.service, openMainMenu)
+        addFallbackZone(station.service, function()
+            openMainMenu(i)
+        end)
         addFallbackZone(station.stash, function()
             exports.ox_inventory:openInventory('stash', { id = Config.Stash.id })
         end)
     end
 
-    ClientState.fallbackReady = true
     notify('inform', L('fallback_active'))
 end
 
@@ -327,6 +333,7 @@ end
 local function init()
     registerBlips()
     ClientState.useTarget = hasTarget()
+
     if ClientState.useTarget then
         registerTargetInteractions()
     else
@@ -368,6 +375,7 @@ end)
 
 AddEventHandler('onResourceStop', function(resource)
     if resource ~= GetCurrentResourceName() then return end
+
     clearTextUi()
 
     if ClientState.useTarget then

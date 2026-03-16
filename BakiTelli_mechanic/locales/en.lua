@@ -3,6 +3,7 @@ RegisterLocale('en', {
     duty_off = 'You are now off duty.',
     no_vehicle = 'No vehicle nearby.',
     invalid_vehicle = 'Invalid vehicle entity.',
+    invalid_station = 'Invalid mechanic station.',
     invalid_vehicle_model = 'Invalid service vehicle model.',
     invalid_player = 'Invalid player source.',
     no_permission = 'You do not have permission.',

@@ -17,43 +17,38 @@ end
 
 local function getPlayer(src)
     if type(src) ~= 'number' or src <= 0 then return nil end
-    local player = exports.qbx_core:GetPlayer(src)
-    return player
+    return exports.qbx_core:GetPlayer(src)
 end
 
 function Validators.player(src)
     local player = getPlayer(src)
     if not player then return false, nil, nil, L('invalid_player') end
+
     local job = player.PlayerData and player.PlayerData.job
     if not job then return false, player, nil, L('no_permission') end
+
     return true, player, job
 end
 
 function Validators.mechanic(src)
     local ok, player, job, err = Validators.player(src)
     if not ok then return false, player, job, err end
+
     if job.name ~= Config.MechanicJob then
         return false, player, job, L('no_permission')
     end
+
     return true, player, job
 end
 
 function Validators.duty(src)
     local ok, player, job, err = Validators.mechanic(src)
     if not ok then return false, player, job, err end
+
     if Config.RequireDuty and not job.onduty then
         return false, player, job, L('off_duty_blocked')
     end
-    return true, player, job
-end
 
-function Validators.boss(src)
-    local ok, player, job, err = Validators.mechanic(src)
-    if not ok then return false, player, job, err end
-    local grade = (job.grade and (job.grade.level or job.grade)) or 0
-    if grade < Config.MinBossGrade then
-        return false, player, job, L('no_permission')
-    end
     return true, player, job
 end
 
@@ -132,15 +127,14 @@ end
 
 lib.callback.register('bakitelli_mechanic:server:getState', function(source)
     local ok, _, job = Validators.mechanic(source)
-    if not ok then return false end
+    if not ok then return false, nil end
 
     local grade = (job.grade and (job.grade.level or job.grade)) or 0
-    local hasVehicleOut = State.serviceVehicles[source] ~= nil
 
     return true, {
         onDuty = job.onduty == true,
         isBoss = grade >= Config.MinBossGrade,
-        hasVehicleOut = hasVehicleOut,
+        hasVehicleOut = State.serviceVehicles[source] ~= nil,
         requireDuty = Config.RequireDuty
     }
 end)
@@ -241,7 +235,7 @@ lib.callback.register('bakitelli_mechanic:server:performService', function(sourc
     return true, L('service_success', service.label)
 end)
 
-lib.callback.register('bakitelli_mechanic:server:spawnServiceVehicle', function(source, model)
+lib.callback.register('bakitelli_mechanic:server:spawnServiceVehicle', function(source, stationId, model)
     local ok, _, _, err = Validators.duty(source)
     if not ok then return false, err end
 
@@ -257,14 +251,14 @@ lib.callback.register('bakitelli_mechanic:server:spawnServiceVehicle', function(
         return false, L('invalid_vehicle_model')
     end
 
-    local garage = Config.Stations[1] and Config.Stations[1].garage
-    if not garage then
-        return false, L('service_failed')
+    local station = Config.Stations[stationId]
+    if not station or not station.garage then
+        return false, L('invalid_station')
     end
 
     local netId = qbx.spawnVehicle({
         model = joaat(model),
-        spawnSource = garage,
+        spawnSource = station.garage,
         warp = GetPlayerPed(source)
     })
 
@@ -275,7 +269,7 @@ lib.callback.register('bakitelli_mechanic:server:spawnServiceVehicle', function(
 end)
 
 lib.callback.register('bakitelli_mechanic:server:returnServiceVehicle', function(source, netId)
-    local ok, _, _, err = Validators.duty(source)
+    local ok, _, _, err = Validators.mechanic(source)
     if not ok then return false, err end
 
     local current = State.serviceVehicles[source]

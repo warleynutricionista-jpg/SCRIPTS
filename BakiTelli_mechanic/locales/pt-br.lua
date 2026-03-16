@@ -3,6 +3,7 @@ RegisterLocale('pt-br', {
     duty_off = 'Você saiu de serviço.',
     no_vehicle = 'Nenhum veículo próximo.',
     invalid_vehicle = 'Entidade de veículo inválida.',
+    invalid_station = 'Estação de mecânica inválida.',
     invalid_vehicle_model = 'Modelo de veículo inválido para serviço.',
     invalid_player = 'Jogador inválido.',
     no_permission = 'Você não tem permissão.',

@@ -635,7 +635,14 @@ local function chooseCharacter()
                                 DoScreenFadeOut(10)
                             end
 
-                            lib.callback.await('qbx_core:server:loadCharacter', false, character.citizenid)
+                            local loadResult = lib.callback.await('qbx_core:server:loadCharacter', false, character.citizenid)
+
+                            if loadResult and loadResult.requiresAppearance then
+                                pendingCharacterCreationData = character.citizenid
+                                TriggerEvent('qb-clothes:client:CreateFirstCharacter')
+                                destroyPreviewCam()
+                                return
+                            end
 
                             if GetResourceState('mri_Qspawn'):find('start') then
                                 exports['mri_Qspawn']:chooseSpawn()

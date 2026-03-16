@@ -211,6 +211,13 @@ lib.callback.register('qbx_core:server:loadCharacter', function(source, citizenI
     })
 
     lib.print.info(('%s (Citizen ID: %s | ID: %s) has successfully loaded!'):format(name, citizenId, source))
+
+    local player = GetPlayer(source)
+    local metadata = player and player.PlayerData and player.PlayerData.metadata or {}
+
+    return {
+        requiresAppearance = metadata and metadata.characterCreationInProgress == true
+    }
 end)
 
 ---@param data table

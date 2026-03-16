@@ -1,35 +1,71 @@
 Config = Config or {}
 
-Config.Features = {
-    enableVehicleSearch = true,
-    enableNpcSearch = true,
-    enableHotwireDamageStates = true,
-    enableLockpickSequence = true
+Config.Debug = false
+
+Config.SearchKey = {
+    Enabled = true,
+    GloveboxChance = 0.30,
+    TrunkChance = 0.25,
+    NoKeyChance = 0.15,
+    Duration = 7000,
+    RequireOpenCompartments = true
 }
 
-Config.Items = {
-    lockpick = 'lockpick',
-    advancedLockpick = 'advancedlockpick',
-    hotwireTool = 'screwdriver'
+Config.NPCSearch = {
+    Enabled = true,
+    Duration = 5000,
+    MaxDistance = 4.0,
+    KeyChance = 0.30
 }
 
-Config.Text = {
+Config.Hotwire = {
+    Enabled = true,
+    RequiredItem = 'screwdriver',
+    ConsumeItem = true,
+    Duration = 9500,
+    SuccessChance = 0.25,
+    PermanentElectricalDamageChance = 0.45,
+    BlockIfPermanentDamage = true,
+    SevereDamageChance = 0.70,
+    BlockEngineOnPermanentDamage = true
+}
+
+Config.Lockpick = {
+    Enabled = true,
+    Stages = 6,
+    FailMode = 'fail', -- fail | regress
+    BreakChance = 0.5,
+    AdvancedBreakChance = 0.10,
+    StageDuration = 1200,
+    RegressAmount = 1
+}
+
+Config.Security = {
+    ActionCooldownMs = 1200,
+    MaxInteractDistance = 5.0
+}
+
+Config.Locale = {
     vehicleLocked = 'Veículo trancado',
     vehicleUnlocked = 'Veículo destrancado',
     actionCancelled = 'Ação cancelada!',
-    keyNotFound = 'Você não encontrou as chaves no interior.',
     keyFound = 'Você encontrou a chave do veículo!',
-    emptyCompartment = 'Nada foi encontrado neste compartimento.',
+    keyNotFound = 'Você não encontrou a chave neste local.',
+    emptyCompartment = 'Compartimento vazio.',
     compartmentClosed = 'Abra o compartimento antes de revistar.',
     alreadySearched = 'Esse compartimento já foi revistado.',
     npcNoKeys = 'O NPC não estava com a chave.',
-    npcEscapedWithKeys = 'Você perdeu o NPC e a chave foi embora com ele.',
-    missingHotwireTool = 'Você precisa de uma chave de fenda para fazer ligação direta.',
+    npcEscapedWithKeys = 'O NPC fugiu com a chave.',
+    missingHotwireTool = 'Você precisa de uma chave de fenda.',
     hotwireToolConsumed = 'Você usou uma chave de fenda.',
-    irreversibleElectricalDamage = 'A ignição sofreu dano elétrico irreversível.',
-    mechanicRequired = 'A ignição está comprometida e precisa de um mecânico.',
-    lockpickProgress = 'Destravamento %s/6',
-    lockpickFailed = 'Falhou em destrancar a porta!',
-    hotwireFailed = 'Você não conseguiu ligar a ignição.',
-    hotwireMinigameFailed = 'Você errou a ligação direta.'
+    irreversibleElectricalDamage = 'O veículo sofreu dano elétrico irreversível.',
+    mechanicRequired = 'A ignição precisa de reparo de mecânico.',
+    lockpickProgress = 'Destravamento %s/%s',
+    lockpickFailed = 'Você falhou no lockpick.',
+    lockpickCancelled = 'Lockpick cancelado.',
+    hotwireFailed = 'A ligação direta falhou.',
+    hotwireSuccess = 'Ligação direta concluída.',
+    tooFar = 'Você está longe demais da ação.',
+    actionBlocked = 'Ação bloqueada por segurança.',
+    invalidTarget = 'Alvo inválido.'
 }

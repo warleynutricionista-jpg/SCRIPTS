@@ -2,12 +2,14 @@ local Bridge = {}
 
 if Shared.Framework == "qb" then
     QBCore = exports['qb-core']:GetCoreObject()
+elseif Shared.Framework == 'qbx' then
+    QBCore = exports['qbx_core']:GetCoreObject()
 elseif Shared.Framework == "esx" then
     ESX = exports['es_extended']:getSharedObject()
 end
 
 function Bridge:GetPlayerCitizenId(id)
-    if Shared.Framework == 'qb' then
+    if Shared.Framework == 'qb' or Shared.Framework == 'qbx' then
         return QBCore.Functions.GetPlayer(id).PlayerData.citizenid
     elseif Shared.Framework == 'esx' then
         local xPlayer = ESX.GetPlayerFromId(id)
@@ -19,7 +21,7 @@ function Bridge:GetPlayerCitizenId(id)
 end
 
 function Bridge:GetPlayer(id)
-    if Shared.Framework == 'qb' then
+    if Shared.Framework == 'qb' or Shared.Framework == 'qbx' then
         return QBCore.Functions.GetPlayer(id)
     elseif Shared.Framework == 'esx' then
         return ESX.GetPlayerFromId(id)
@@ -29,7 +31,7 @@ function Bridge:GetPlayer(id)
 end
 
 function Bridge:GetPlayerJob(id)
-    if Shared.Framework == 'qb' then
+    if Shared.Framework == 'qb' or Shared.Framework == 'qbx' then
         local Player = QBCore.Functions.GetPlayer(id)
         return Player.PlayerData.job.name
     elseif Shared.Framework == 'esx' then

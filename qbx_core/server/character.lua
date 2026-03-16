@@ -98,6 +98,29 @@ local function giveStarterItems(source)
     end
 end
 
+---@param player Player
+---@return boolean
+local function hasReceivedStarterItems(player)
+    return player
+        and player.PlayerData
+        and player.PlayerData.metadata
+        and player.PlayerData.metadata.starterItemsReceived == true
+end
+
+---@param source number
+---@param player? Player
+local function finalizeCharacterCreation(source, player)
+    local targetPlayer = player or GetPlayer(source)
+    if not targetPlayer then return end
+
+    if hasReceivedStarterItems(targetPlayer) then
+        return
+    end
+
+    giveStarterItems(source)
+    targetPlayer.Functions.SetMetaData('starterItemsReceived', true)
+end
+
 ---------------------------------------------------------------------
 -- CALLBACKS: GET CHARACTERS / PREVIEW / LOAD / CREATE
 ---------------------------------------------------------------------
@@ -202,10 +225,16 @@ lib.callback.register('qbx_core:server:createCharacter', function(source, data)
         return
     end
 
-    giveStarterItems(source)
-
     lib.print.info(('%s has created a character'):format(GetPlayerName(source)))
     return newData
+end)
+
+RegisterNetEvent('qbx_core:server:characterCreationCompleted', function()
+    local src = source
+    local player = GetPlayer(src)
+    if not player then return end
+
+    finalizeCharacterCreation(src, player)
 end)
 
 ---------------------------------------------------------------------

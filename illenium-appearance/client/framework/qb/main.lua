@@ -116,7 +116,15 @@ end)
 
 RegisterNetEvent('qb-clothes:client:CreateFirstCharacter', function()
     setClientParams()
-    InitializeCharacter(Framework.GetGender(true))
+    InitializeCharacter(
+        Framework.GetGender(true),
+        function()
+            TriggerEvent('qbx_core:client:firstCharacterAppearanceFinished')
+        end,
+        function()
+            TriggerEvent('qbx_core:client:forceCharacterMenu')
+        end
+    )
 end)
 
 RegisterNetEvent('qb-multicharacter:client:chooseChar', function()

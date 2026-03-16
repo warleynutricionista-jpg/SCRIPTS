@@ -105,16 +105,58 @@ function ActionGuard:GetEntityState(vehicle, key)
     return Entity(vehicle).state[key]
 end
 
-function ActionGuard:CanSearchCompartment(vehicle, compartment)
+function ActionGuard:AwaitClientEntityState(source, netId, action, payload)
+    if type(source) ~= 'number' or source <= 0 then
+        return false, 'invalid_source'
+    end
+
+    if type(netId) ~= 'number' or netId <= 0 then
+        return false, 'invalid_netid'
+    end
+
+    local request = {
+        netId = netId,
+        action = action,
+        payload = payload or {}
+    }
+
+    local okCall, response = pcall(lib.callback.await, 'mm_carkeys:client:entityState', source, request)
+    if not okCall then
+        self:Debug('entityState callback error src=%s netId=%s action=%s err=%s', source, netId, action, response)
+        return false, 'callback_error'
+    end
+
+    if type(response) ~= 'table' or not response.ok then
+        local reason = type(response) == 'table' and response.reason or 'no_response'
+        self:Debug('entityState failed src=%s netId=%s action=%s reason=%s', source, netId, action, reason)
+        return false, reason
+    end
+
+    return true, response.data or {}
+end
+
+function ActionGuard:CanSearchCompartment(source, vehNetId, vehicle, compartment)
     if not Config.SearchKey.RequireOpenCompartments then return true end
+    if not self:ValidateDistance(source, vehicle, Shared.security.maxInteractDistance) then
+        return false
+    end
+
+    local doors = compartment == 'trunk' and { 5 } or compartment == 'glovebox' and { 0, 1 } or nil
+    if not doors then return false end
+
+    local ok, data = self:AwaitClientEntityState(source, vehNetId, 'doorAngles', {
+        doors = doors
+    })
+
+    if not ok or type(data) ~= 'table' or type(data.angles) ~= 'table' then
+        return false
+    end
+
     if compartment == 'trunk' then
-        return GetVehicleDoorAngleRatio(vehicle, 5) > 0.05
+        return (tonumber(data.angles[5]) or 0.0) > 0.05
     end
-    if compartment == 'glovebox' then
-        -- glovebox visual is contextual in GTA; accept front doors open as proxy
-        return GetVehicleDoorAngleRatio(vehicle, 0) > 0.05 or GetVehicleDoorAngleRatio(vehicle, 1) > 0.05
-    end
-    return false
+
+    return (tonumber(data.angles[0]) or 0.0) > 0.05 or (tonumber(data.angles[1]) or 0.0) > 0.05
 end
 
 function ActionGuard:GetRoundedDistance(source, entity)

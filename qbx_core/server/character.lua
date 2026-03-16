@@ -113,12 +113,23 @@ local function finalizeCharacterCreation(source, player)
     local targetPlayer = player or GetPlayer(source)
     if not targetPlayer then return end
 
+    local shouldEmitPlayerLoaded = targetPlayer.PlayerData.metadata and targetPlayer.PlayerData.metadata.characterCreationInProgress == true
+
     if hasReceivedStarterItems(targetPlayer) then
+        if shouldEmitPlayerLoaded then
+            targetPlayer.Functions.SetMetaData('characterCreationInProgress', false)
+            TriggerEvent('QBCore:Server:PlayerLoaded', targetPlayer)
+        end
         return
     end
 
     giveStarterItems(source)
     targetPlayer.Functions.SetMetaData('starterItemsReceived', true)
+
+    if shouldEmitPlayerLoaded then
+        targetPlayer.Functions.SetMetaData('characterCreationInProgress', false)
+        TriggerEvent('QBCore:Server:PlayerLoaded', targetPlayer)
+    end
 end
 
 ---------------------------------------------------------------------
@@ -212,7 +223,10 @@ lib.callback.register('qbx_core:server:createCharacter', function(source, data)
     end
 
     local newData = {
-        charinfo = data
+        charinfo = data,
+        metadata = {
+            characterCreationInProgress = true
+        }
     }
 
     local ok, loginResult = pcall(function()

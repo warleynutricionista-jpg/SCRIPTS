@@ -745,7 +745,7 @@ RegisterNetEvent('qbx_core:client:firstCharacterAppearanceFinished', function()
     elseif GetResourceState('qbx_apartments'):find('start') and config.characters.startingApartment then
         TriggerEvent('apartments:client:setupSpawnUI', pendingCharacterCreationData)
     elseif GetResourceState('qbx_spawn'):find('start') then
-        TriggerEvent('qb-spawn:client:setupSpawns', pendingCharacterCreationData, false)
+        TriggerEvent('qb-spawn:client:setupSpawns', pendingCharacterCreationData, true)
     else
         spawnDefault()
     end

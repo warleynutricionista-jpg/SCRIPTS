@@ -51,6 +51,8 @@ function Hotwire:HotwireHandler()
         return
     end
 
+    lib.notify({ description = Shared.text.hotwireToolConsumed, type = 'inform' })
+
     self.isHotwiring = true
     self.activeVehicle = vehicle
     self.activeToken = payload.token

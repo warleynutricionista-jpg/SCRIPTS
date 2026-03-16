@@ -6,7 +6,8 @@ local Action = require 'client.modules.action_helper'
 local Steal = {
     isCarjacking = false,
     canCarjack = true,
-    isRobbingKeys = false
+    isRobbingKeys = false,
+    npcSearchVehicle = {}
 }
 
 function Steal:ToggleCooldown()

@@ -16,7 +16,7 @@ function LockPick:BreakLockPick(isAdvanced)
     local chance = math.random()
     local canBreak = isAdvanced and chance <= Shared.lockpick.advancedBreakChance or chance <= Shared.lockpick.breakChance
     if canBreak then
-        TriggerServerEvent('mm_carkeys:server:removelockpick', isAdvanced and 'advancedlockpick' or 'lockpick')
+        TriggerServerEvent('mm_carkeys:server:removelockpick', isAdvanced and Shared.items.advancedLockpick or Shared.items.lockpick)
     end
 end
 
@@ -81,7 +81,9 @@ function LockPick:LockPickDoor(isAdvanced)
     self.lockpicking = false
 
     if result then
+        local plate = GetVehicleNumberPlateText(vehicle)
         TriggerServerEvent('mm_carkeys:server:setVehLockState', NetworkGetNetworkIdFromEntity(vehicle), 1)
+        TriggerServerEvent('mm_carkeys:server:setVehicleStatus', plate, Shared.vehicleState.states.breached)
         SetVehicleDoorsLockedForAllPlayers(vehicle, false)
         Action:Notify(Shared.text.vehicleUnlocked, 'success')
         return

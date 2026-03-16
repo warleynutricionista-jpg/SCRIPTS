@@ -88,6 +88,25 @@ local function resolveVehicleAndState(netId)
     return vehicle, plate, data
 end
 
+local function getDefaultVehicleState()
+    return {
+        keyFound = false,
+        searched = { glovebox = false, trunk = false },
+        keyLocation = false,
+        status = Shared.vehicleState.states.normal,
+        hasIrreversibleDamage = false,
+        requiresMechanic = false,
+        assignedNpc = false,
+        npcSearched = false
+    }
+end
+
+local function getVehicleState(plate)
+    plate = RemoveSpecialCharacter(plate)
+    VehicleStateByPlate[plate] = VehicleStateByPlate[plate] or getDefaultVehicleState()
+    return VehicleStateByPlate[plate], plate
+end
+
 function GiveTempKeys(id, plate)
     local citizenid = Bridge:GetPlayerCitizenId(id)
     if not citizenid then return end

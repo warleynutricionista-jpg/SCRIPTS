@@ -78,4 +78,14 @@ function VehicleSecurity:RunHotwireMinigame()
     return lib.skillCheck(Shared.hotwire.skillDifficulty or { 'easy', 'easy' })
 end
 
+function VehicleSecurity:SetVehicleStatus(plate, status)
+    if not plate or not status then return end
+    TriggerServerEvent('mm_carkeys:server:setVehicleStatus', plate, status)
+end
+
+function VehicleSecurity:CanAttemptHotwire(plate)
+    if not plate then return false, 'invalid' end
+    return lib.callback.await('mm_carkeys:server:canAttemptHotwire', false, plate)
+end
+
 return VehicleSecurity

@@ -4,15 +4,30 @@ local function resourceStarted(name)
     return GetResourceState(name) == 'started'
 end
 
-function VehicleSecurity:IsIgnitionJammed(vehicle)
+function VehicleSecurity:GetVehicleState(plate)
+    if not plate then return false end
+    return lib.callback.await('mm_carkeys:server:getVehicleState', false, plate)
+end
+
+function VehicleSecurity:IsIrreversibleState(plate)
+    local state = self:GetVehicleState(plate)
+    return state and state.hasIrreversibleDamage
+end
+
+function VehicleSecurity:IsIgnitionJammed(vehicle, plate)
+    if plate and self:IsIrreversibleState(plate) then
+        return true
+    end
+
     if vehicle == 0 or not DoesEntityExist(vehicle) then return false end
     return GetVehicleEngineHealth(vehicle) <= Shared.ignition.jammedThreshold
 end
 
-function VehicleSecurity:NotifyIgnitionJammed()
+function VehicleSecurity:NotifyIgnitionJammed(reason)
+    local description = reason == 'mechanic_required' and Shared.text.mechanicRequired or 'A ignição encravou e precisa de reparo mecânico.'
     lib.notify({
         title = 'Ignição encravada',
-        description = 'A ignição encravou e precisa de reparo mecânico.',
+        description = description,
         type = 'error'
     })
 end
@@ -97,6 +112,16 @@ function VehicleSecurity:RunHotwireMinigame()
     end
 
     return lib.skillCheck(Shared.hotwire.skillDifficulty or { 'easy', 'easy' })
+end
+
+function VehicleSecurity:SetVehicleStatus(plate, status)
+    if not plate or not status then return end
+    TriggerServerEvent('mm_carkeys:server:setVehicleStatus', plate, status)
+end
+
+function VehicleSecurity:CanAttemptHotwire(plate)
+    if not plate then return false, 'invalid' end
+    return lib.callback.await('mm_carkeys:server:canAttemptHotwire', false, plate)
 end
 
 return VehicleSecurity

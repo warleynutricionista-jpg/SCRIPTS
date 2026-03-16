@@ -6,6 +6,7 @@ version "1.0.9"
 lua54 "yes"
 shared_scripts {
     "@ox_lib/init.lua",
+    "config.lua",
     "shared/shared.lua",
     "shared/init.lua"
 }

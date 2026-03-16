@@ -5,7 +5,8 @@ local VehicleSecurity = require 'client.modules.vehicle_security'
 local Steal = {
     isCarjacking = false,
     canCarjack = true,
-    isRobbingKeys = false
+    isRobbingKeys = false,
+    npcSearchVehicle = {}
 }
 
 function Steal:ToggleCooldown()
@@ -39,9 +40,7 @@ function Steal:CheckStealStatus(target, vehicle)
             local distance = #(GetEntityCoords(cache.ped) - GetEntityCoords(target))
             if IsPedDeadOrDying(target, false) or distance > 7.5 then
                 SetVehicleUndriveable(vehicle, false)
-                if lib.progressActive() then
-                    lib.cancelProgress()
-                end
+                if lib.progressActive() then lib.cancelProgress() end
                 break
             end
             Wait(25)
@@ -134,7 +133,7 @@ function Steal:CarjackVehicle(target)
         TriggerServerEvent('hud:server:GainStress', Shared.steal.stressIncrease)
         TriggerServerEvent('mm_carkeys:server:setVehLockState', NetworkGetNetworkIdFromEntity(vehicle), 1)
 
-        local plate = GetVehicleNumberPlateText(vehicle)
+        local plate = Utils:RemoveSpecialCharacter(GetVehicleNumberPlateText(vehicle))
         local modelName = GetDisplayNameFromVehicleModel(GetEntityModel(vehicle))
         if Shared.steal.getKey == 'permanent' then
             TriggerServerEvent('mm_carkeys:server:acquirevehiclekeys', plate, modelName)
@@ -153,40 +152,82 @@ function Steal:CarjackVehicle(target)
     SetVehicleUndriveable(vehicle, false)
 end
 
-function Steal:GetKeyLocation()
-    local roll = math.random()
-    local chances = Shared.grab.keyLocationChance
-
-    if roll <= chances.driver then
-        return 'driver'
-    end
-
-    if roll <= chances.driver + chances.glovebox then
-        return 'glovebox'
-    end
-
-    return 'sunvisor'
+function Steal:IsCompartmentOpen(vehicle, compartment)
+    local cfg = Shared.grab.searchCompartments[compartment]
+    if not cfg then return false end
+    if not cfg.requiresDoorOpen then return true end
+    return GetVehicleDoorAngleRatio(vehicle, cfg.doorIndex) > 0.05
 end
 
-function Steal:RunInteriorSearch(vehicle)
-    local searchTime = math.random(Shared.grab.searchMinTime, Shared.grab.searchMaxTime)
-    local location = self:GetKeyLocation()
-    local locationLabel = location == 'glovebox' and 'porta-luvas' or 'quebra-sol'
+function Steal:SearchCompartment(vehicle, plate, compartment)
+    local state = VehicleSecurity:GetVehicleState(plate)
+    local config = Shared.grab.searchCompartments[compartment]
+    if not state or not config then return false end
 
-    lib.notify({ description = ('As chaves não estavam com o condutor. Vasculhe o %s.'):format(locationLabel), type = 'inform' })
-
-    if not IsPedInVehicle(cache.ped, vehicle, false) then
-        TaskEnterVehicle(cache.ped, vehicle, 4000, -1, 1.0, 1, 0)
-        Wait(1500)
-    end
-
-    if not IsPedInVehicle(cache.ped, vehicle, false) then
+    if state.searched and state.searched[compartment] then
+        lib.notify({ description = Shared.text.alreadySearched, type = 'error' })
         return false
     end
 
+    if not self:IsCompartmentOpen(vehicle, compartment) then
+        lib.notify({ description = Shared.text.compartmentClosed, type = 'error' })
+        return false
+    end
+
+    local completed = lib.progressBar({
+        label = config.label,
+        duration = math.random(Shared.grab.searchMinTime, Shared.grab.searchMaxTime),
+        position = 'bottom',
+        canCancel = true,
+        useWhileDead = false,
+        disable = { move = true, combat = true },
+        anim = { dict = 'anim@amb@clubhouse@tutorial@bkr_tut_ig3@', clip = 'machinic_loop_mechandplayer' }
+    })
+
+    if not completed then
+        lib.notify({ description = Shared.text.actionCancelled, type = 'error' })
+        return false
+    end
+
+    TriggerServerEvent('mm_carkeys:server:markVehicleCompartmentSearched', plate, compartment)
+    local found, reason = lib.callback.await('mm_carkeys:server:finishVehicleCompartmentSearch', false, plate, compartment)
+    if found then
+        lib.notify({ description = Shared.text.keyFound, type = 'success' })
+        return true
+    end
+
+    if reason == 'empty' then
+        lib.notify({ description = Shared.text.emptyCompartment, type = 'inform' })
+    end
+
+    return false
+end
+
+function Steal:SearchNpcForKey(vehicle, driver)
+    if not DoesEntityExist(driver) or IsPedAPlayer(driver) then return false end
+    local plate = Utils:RemoveSpecialCharacter(GetVehicleNumberPlateText(vehicle))
+    local npcNetId = PedToNet(driver)
+
+    if not self.npcSearchVehicle[npcNetId] then
+        self.npcSearchVehicle[npcNetId] = plate
+        TriggerServerEvent('mm_carkeys:server:assignNpcVehicleKey', plate, npcNetId)
+    end
+
+    local escaped = false
     CreateThread(function()
         while lib.progressActive() do
-            if not IsPedInVehicle(cache.ped, vehicle, false) or IsEntityDead(cache.ped) then
+            if not DoesEntityExist(driver) or IsEntityDead(driver) then
+                escaped = true
+                lib.cancelProgress()
+                break
+            end
+            if #(GetEntityCoords(cache.ped) - GetEntityCoords(driver)) > Shared.steal.npcSearch.maxDistance then
+                escaped = true
+                lib.cancelProgress()
+                break
+            end
+            if IsPedInAnyVehicle(driver, false) then
+                escaped = true
                 lib.cancelProgress()
                 break
             end
@@ -194,22 +235,36 @@ function Steal:RunInteriorSearch(vehicle)
         end
     end)
 
-    return lib.progressBar({
-        label = Shared.grab.searchLabel,
-        duration = searchTime,
-        position = 'bottom',
-        allowCuffed = false,
-        useWhileDead = false,
+    local completed = lib.progressBar({
+        label = Shared.steal.npcSearch.label,
+        duration = Shared.steal.npcSearch.duration,
         canCancel = true,
-        disable = {
-            move = true,
-            combat = true
-        },
-        anim = {
-            dict = 'anim@amb@clubhouse@tutorial@bkr_tut_ig3@',
-            clip = 'machinic_loop_mechandplayer'
-        }
+        useWhileDead = false,
+        disable = { move = true, combat = true },
+        anim = { dict = 'amb@prop_human_bum_bin@base', clip = 'base' }
     })
+
+    if not completed then
+        if escaped then
+            TriggerServerEvent('mm_carkeys:server:markNpcEscapedWithKey', plate, npcNetId)
+            lib.notify({ description = Shared.text.npcEscapedWithKeys, type = 'error' })
+        else
+            lib.notify({ description = Shared.text.actionCancelled, type = 'error' })
+        end
+        return false
+    end
+
+    local found, reason = lib.callback.await('mm_carkeys:server:searchNpcForVehicleKey', false, plate, npcNetId)
+    if found then
+        lib.notify({ description = Shared.text.keyFound, type = 'success' })
+        return true
+    end
+
+    if reason == 'no_key' then
+        lib.notify({ description = Shared.text.npcNoKeys, type = 'inform' })
+    end
+
+    return false
 end
 
 function Steal:GrabKey(vehicle)
@@ -217,11 +272,11 @@ function Steal:GrabKey(vehicle)
     if vehicle == 0 or not DoesEntityExist(vehicle) then return end
 
     self.isRobbingKeys = true
-    local robTime = math.random(Shared.grab.minTime, Shared.grab.maxTime)
+    local driver = GetPedInVehicleSeat(vehicle, -1)
 
     local robbed = lib.progressBar({
         label = Shared.grab.label,
-        duration = robTime,
+        duration = math.random(Shared.steal.minTime, Shared.steal.maxTime),
         position = 'bottom',
         allowCuffed = false,
         useWhileDead = false,
@@ -234,17 +289,22 @@ function Steal:GrabKey(vehicle)
         return
     end
 
-    local keyLocation = self:GetKeyLocation()
-    local hasKeys = keyLocation == 'driver' or self:RunInteriorSearch(vehicle)
+    local foundOnNpc = false
+    if Shared.features.enableNpcSearch and driver ~= 0 then
+        foundOnNpc = self:SearchNpcForKey(vehicle, driver)
+    end
 
-    if hasKeys and Shared.grab.leaveKeysOnVehicle then
-        TriggerServerEvent('mm_carkeys:server:acquiretempvehiclekeys', GetVehicleNumberPlateText(vehicle))
-    else
-        lib.notify({
-            title = 'Falhou',
-            description = 'Você não encontrou as chaves no interior.',
-            type = 'error'
-        })
+    if foundOnNpc then
+        self.isRobbingKeys = false
+        return
+    end
+
+    if Shared.features.enableVehicleSearch then
+        local plate = Utils:RemoveSpecialCharacter(GetVehicleNumberPlateText(vehicle))
+        local foundGlove = self:SearchCompartment(vehicle, plate, 'glovebox')
+        if not foundGlove then
+            self:SearchCompartment(vehicle, plate, 'trunk')
+        end
     end
 
     self.isRobbingKeys = false

@@ -54,14 +54,14 @@ function KeyManagement:ToggleVehicleLock(vehicle, remote)
         TriggerServerEvent('mm_carkeys:server:setVehLockState', NetworkGetNetworkIdFromEntity(vehicle), 4)
         SetVehicleDoorsLockedForAllPlayers(vehicle, true)
         lib.notify({
-            description = 'Veículo trancado',
+            description = Shared.text.vehicleLocked,
             type = 'error'
         })
     else
         TriggerServerEvent('mm_carkeys:server:setVehLockState', NetworkGetNetworkIdFromEntity(vehicle), 1)
         SetVehicleDoorsLockedForAllPlayers(vehicle, false)
         lib.notify({
-            description = 'Veículo destrancado',
+            description = Shared.text.vehicleUnlocked,
             type = 'success'
         })
     end
@@ -234,7 +234,7 @@ RegisterNetEvent('mm_carkeys:client:givekeyitem', function()
         TriggerServerEvent('mm_carkeys:server:acquirevehiclekeys', VehicleKeys.currentVehiclePlate)
     else
         lib.notify({
-            description = 'Ação cancelada!',
+            description = Shared.text.actionCancelled,
             type = 'error'
         })
     end

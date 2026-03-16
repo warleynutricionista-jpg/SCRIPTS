@@ -53,11 +53,7 @@ function Hotwire:RunHotwireStage(label, duration, vehicle)
         allowCuffed = false,
         useWhileDead = false,
         canCancel = true,
-        disable = {
-            car = true,
-            move = true,
-            combat = true
-        },
+        disable = { car = true, move = true, combat = true },
         anim = {
             dict = 'anim@amb@clubhouse@tutorial@bkr_tut_ig3@',
             clip = 'machinic_loop_mechandplayer'
@@ -65,6 +61,15 @@ function Hotwire:RunHotwireStage(label, duration, vehicle)
     })
 
     return completed and self:CanContinueHotwire(vehicle)
+end
+
+function Hotwire:HasTool()
+    return lib.callback.await('mm_carkeys:server:hasItem', false, Shared.hotwire.requiredItem, 1)
+end
+
+function Hotwire:ConsumeTool()
+    if not Shared.hotwire.consumeItem then return true end
+    return lib.callback.await('mm_carkeys:server:consumeItem', false, Shared.hotwire.requiredItem, 1)
 end
 
 function Hotwire:RunSequence(vehicle)
@@ -94,6 +99,7 @@ function Hotwire:RunSequence(vehicle)
 
     if math.random() <= successChance then
         VehicleSecurity:UpdateReputation('hotwiring', 1)
+        VehicleSecurity:SetVehicleStatus(VehicleKeys.currentVehiclePlate, Shared.vehicleState.states.breached)
         TriggerServerEvent('mm_carkeys:server:acquiretempvehiclekeys', VehicleKeys.currentVehiclePlate)
         SetVehicleEngineOn(vehicle, true, false, true)
         VehicleKeys.isEngineRunning = true
@@ -103,43 +109,71 @@ function Hotwire:RunSequence(vehicle)
     return false, 'chance_failed'
 end
 
+function Hotwire:ApplyFailureState(plate)
+    local severe = math.random() <= Shared.hotwire.severeDamageChance
+    local irreversible = severe and math.random() <= Shared.hotwire.irreversibleDamageChance
+
+    if irreversible then
+        TriggerServerEvent('mm_carkeys:server:applyHotwireFailureState', plate, 'irreversible')
+        lib.notify({ title = 'Falhou', description = Shared.text.irreversibleElectricalDamage, type = 'error' })
+        if Shared.ignition.blockEngineOnIrreversible and VehicleKeys.currentVehicle ~= 0 then
+            SetVehicleEngineOn(VehicleKeys.currentVehicle, false, false, true)
+        end
+        return
+    end
+
+    if severe then
+        TriggerServerEvent('mm_carkeys:server:applyHotwireFailureState', plate, 'severe')
+    end
+end
+
 function Hotwire:HotwireHandler()
     if self.isHotwiring then return end
     if VehicleKeys.currentVehicle == 0 then return end
     if not VehicleKeys.isInDrivingSeat then return end
 
-    local vehicle = VehicleKeys.currentVehicle
-
-    if VehicleSecurity:IsIgnitionJammed(vehicle) then
-        VehicleSecurity:NotifyIgnitionJammed()
+    local canAttempt, reason = VehicleSecurity:CanAttemptHotwire(VehicleKeys.currentVehiclePlate)
+    if not canAttempt then
+        VehicleSecurity:NotifyIgnitionJammed(reason)
         return
     end
 
+    if not self:HasTool() then
+        lib.notify({ description = Shared.text.missingHotwireTool, type = 'error' })
+        return
+    end
+
+    if not self:ConsumeTool() then
+        lib.notify({ description = Shared.text.missingHotwireTool, type = 'error' })
+        return
+    end
+
+    lib.notify({ description = Shared.text.hotwireToolConsumed, type = 'inform' })
+
     self.isHotwiring = true
-    self.activeVehicle = vehicle
+    self.activeVehicle = VehicleKeys.currentVehicle
 
     lib.hideTextUI()
     VehicleKeys.showTextUi = false
-    self:WatchInterruption(vehicle)
+    self:WatchInterruption(VehicleKeys.currentVehicle)
 
-    local success, reason = self:RunSequence(vehicle)
+    local success, reasonFail = self:RunSequence(VehicleKeys.currentVehicle)
     TriggerServerEvent('hud:server:GainStress', Shared.hotwire.stressIncrease)
 
-    if self.activeVehicle == vehicle then
+    if self.activeVehicle ~= 0 then
         self.isHotwiring = false
         self.activeVehicle = 0
     end
 
-    if success then
-        return
-    end
+    if success then return end
 
-    VehicleSecurity:ApplyIgnitionFailureDamage(vehicle, Shared.ignition.hotwireFailDamage)
+    VehicleSecurity:ApplyIgnitionFailureDamage(VehicleKeys.currentVehicle, Shared.ignition.hotwireFailDamage)
+    self:ApplyFailureState(VehicleKeys.currentVehiclePlate)
 
-    if reason == 'chance_failed' then
-        lib.notify({ title = 'Falhou', description = 'Você não conseguiu ligar a ignição.', type = 'error' })
-    elseif reason == 'minigame_failed' then
-        lib.notify({ title = 'Falhou', description = 'Você errou a ligação direta.', type = 'error' })
+    if reasonFail == 'chance_failed' then
+        lib.notify({ title = 'Falhou', description = Shared.text.hotwireFailed, type = 'error' })
+    elseif reasonFail == 'minigame_failed' then
+        lib.notify({ title = 'Falhou', description = Shared.text.hotwireMinigameFailed, type = 'error' })
     end
 
     if VehicleKeys.currentVehicle ~= 0 and VehicleKeys.isInDrivingSeat and not VehicleKeys.showTextUi then

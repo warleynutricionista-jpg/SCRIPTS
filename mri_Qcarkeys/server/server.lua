@@ -1,6 +1,8 @@
 local Bridge = require 'server.bridge'
 
 local VehicleList = {}
+local VehicleStateByPlate = {}
+local VehicleNpcAssignments = {}
 local getItemInfo = Shared.Inventory == 'qb' and function(item) return item.info end or function(item) return item.metadata end
 
 local function isValidPlate(plate)
@@ -11,6 +13,25 @@ end
 
 local function RemoveSpecialCharacter(txt)
     return txt:gsub("%W", "")
+end
+
+local function getDefaultVehicleState()
+    return {
+        keyFound = false,
+        searched = { glovebox = false, trunk = false },
+        keyLocation = false,
+        status = Shared.vehicleState.states.normal,
+        hasIrreversibleDamage = false,
+        requiresMechanic = false,
+        assignedNpc = false,
+        npcSearched = false
+    }
+end
+
+local function getVehicleState(plate)
+    plate = RemoveSpecialCharacter(plate)
+    VehicleStateByPlate[plate] = VehicleStateByPlate[plate] or getDefaultVehicleState()
+    return VehicleStateByPlate[plate], plate
 end
 
 function GiveTempKeys(id, plate)
@@ -33,6 +54,128 @@ function GiveTempKeys(id, plate)
     TriggerClientEvent('ox_lib:notify', id, ndata)
     TriggerClientEvent('mm_carkeys:client:addtempkeys', id, plate)
 end
+
+lib.callback.register('mm_carkeys:server:getVehicleState', function(_, plate)
+    if not isValidPlate(plate) then return false end
+    local data = getVehicleState(plate)
+    return data
+end)
+
+RegisterNetEvent('mm_carkeys:server:setVehicleStatus', function(plate, status)
+    local src = source
+    if not src or src <= 0 then return end
+    if not isValidPlate(plate) then return end
+    local data = getVehicleState(plate)
+    data.status = status or data.status
+end)
+
+RegisterNetEvent('mm_carkeys:server:markVehicleCompartmentSearched', function(plate, compartment)
+    local src = source
+    if not src or src <= 0 then return end
+    if not isValidPlate(plate) then return end
+    if compartment ~= 'glovebox' and compartment ~= 'trunk' then return end
+    local data = getVehicleState(plate)
+    data.searched[compartment] = true
+    if not data.keyLocation then
+        local roll = math.random()
+        local gloveChance = Shared.grab.searchCompartments.glovebox.chance
+        local trunkChance = Shared.grab.searchCompartments.trunk.chance
+        local total = gloveChance + trunkChance
+        if roll <= gloveChance then
+            data.keyLocation = 'glovebox'
+        elseif roll <= total then
+            data.keyLocation = 'trunk'
+        else
+            data.keyLocation = 'none'
+        end
+    end
+end)
+
+lib.callback.register('mm_carkeys:server:finishVehicleCompartmentSearch', function(source, plate, compartment)
+    if not isValidPlate(plate) then return false, 'invalid' end
+    if compartment ~= 'glovebox' and compartment ~= 'trunk' then return false, 'invalid' end
+    local data = getVehicleState(plate)
+    if data.keyFound then return false, 'already_found' end
+    if data.keyLocation == compartment then
+        data.keyFound = true
+        data.status = Shared.vehicleState.states.breached
+        GiveTempKeys(source, plate)
+        return true, 'found'
+    end
+    return false, 'empty'
+end)
+
+RegisterNetEvent('mm_carkeys:server:assignNpcVehicleKey', function(plate, npcNetId)
+    local src = source
+    if not src or src <= 0 then return end
+    if not isValidPlate(plate) then return end
+    local data = getVehicleState(plate)
+    if data.assignedNpc then return end
+    data.assignedNpc = npcNetId
+    VehicleNpcAssignments[npcNetId] = RemoveSpecialCharacter(plate)
+end)
+
+lib.callback.register('mm_carkeys:server:searchNpcForVehicleKey', function(source, plate, npcNetId)
+    if not isValidPlate(plate) then return false, 'invalid' end
+    local data = getVehicleState(plate)
+    if data.npcSearched then return false, 'searched' end
+    if data.keyFound then return false, 'already_found' end
+    if data.assignedNpc and data.assignedNpc ~= npcNetId then return false, 'invalid_npc' end
+
+    data.npcSearched = true
+    local carried = math.random() <= 0.55
+    if not carried then
+        return false, 'no_key'
+    end
+
+    data.keyFound = true
+    data.status = Shared.vehicleState.states.breached
+    GiveTempKeys(source, plate)
+    return true, 'found'
+end)
+
+RegisterNetEvent('mm_carkeys:server:markNpcEscapedWithKey', function(plate, npcNetId)
+    local src = source
+    if not src or src <= 0 then return end
+    if not isValidPlate(plate) then return end
+    local data = getVehicleState(plate)
+    if data.keyFound or data.npcSearched then return end
+    if data.assignedNpc and data.assignedNpc ~= npcNetId then return end
+    data.keyLocation = 'escaped_npc'
+end)
+
+RegisterNetEvent('mm_carkeys:server:applyHotwireFailureState', function(plate, failureType)
+    local src = source
+    if not src or src <= 0 then return end
+    if not isValidPlate(plate) then return end
+    local data = getVehicleState(plate)
+    if failureType == 'irreversible' then
+        data.status = Shared.vehicleState.states.irreversible
+        data.hasIrreversibleDamage = true
+        data.requiresMechanic = Shared.ignition.requiresMechanicOnIrreversible
+    else
+        data.status = Shared.vehicleState.states.ignitionDamaged
+    end
+end)
+
+lib.callback.register('mm_carkeys:server:canAttemptHotwire', function(_, plate)
+    if not isValidPlate(plate) then return false, 'invalid' end
+    local data = getVehicleState(plate)
+    if data.hasIrreversibleDamage then
+        return false, data.requiresMechanic and 'mechanic_required' or 'irreversible'
+    end
+    return true
+end)
+
+RegisterNetEvent('mm_carkeys:server:repairVehicleElectrical', function(plate)
+    local src = source
+    if not src or src <= 0 then return end
+    if not isValidPlate(plate) then return end
+    local state = getVehicleState(plate)
+    state.status = Shared.vehicleState.states.repaired
+    state.hasIrreversibleDamage = false
+    state.requiresMechanic = false
+end)
 
 function RemoveTempKeys(id, plate)
     local citizenid = Bridge:GetPlayerCitizenId(id)
@@ -109,6 +252,16 @@ exports('HavePermanentKey', function(src, plate)
     return lib.callback.await('mm_carkeys:client:havekey', src, 'perma', plate)
 end)
 
+
+lib.callback.register('mm_carkeys:server:hasItem', function(source, item, amount)
+    if type(item) ~= 'string' or item == '' then return false end
+    return Bridge:HasItem(source, item, amount)
+end)
+
+lib.callback.register('mm_carkeys:server:consumeItem', function(source, item, amount)
+    if type(item) ~= 'string' or item == '' then return false end
+    return Bridge:TryRemoveItem(source, item, amount)
+end)
 lib.callback.register('mm_carkeys:server:getvehiclekeys', function(source)
     local citizenid = Bridge:GetPlayerCitizenId(source)
     return VehicleList[citizenid] or {}

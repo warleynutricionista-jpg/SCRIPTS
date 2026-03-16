@@ -424,14 +424,36 @@ AddEventHandler('qb-spawn:client:setupSpawns', function(cData, new, apps)
 
     if new then
         -- novo personagem: pega "apps" (provavelmente apartamentos iniciais)
-        for k, v in pairs(apps) do
+        if type(apps) == 'table' then
+            for k, v in pairs(apps) do
+                if v and v.door then
+                    spawns[#spawns+1] = {
+                        first_time = true,
+                        key        = k,
+                        label      = v.label,
+                        coords     = vector3(v.door.x, v.door.y, v.door.z)
+                        -- note: sem heading aqui, se quiser add v.door.w
+                    }
+                end
+            end
+        end
+
+        if #spawns == 0 then
             spawns[#spawns+1] = {
                 first_time = true,
-                key        = k,
-                label      = v.label,
-                coords     = vector3(v.door.x, v.door.y, v.door.z)
-                -- note: sem heading aqui, se quiser add v.door.w
+                label = 'last_location',
+                coords = lib.callback.await('qbx_spawn:server:getLastLocation')
             }
+
+            for i = 1, #config.spawns do
+                local spawn = config.spawns[i]
+                spawns[#spawns+1] = {
+                    first_time = true,
+                    label = spawn.label,
+                    coords = spawn.coords,
+                    propertyId = spawn.propertyId
+                }
+            end
         end
     else
         -- opção "última localização"

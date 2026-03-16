@@ -176,7 +176,7 @@ lib.callback.register('mm_carkeys:server:beginCompartmentSearch', function(sourc
     local searched = compartment == 'glovebox' and data.searched_glovebox or data.searched_trunk
     if searched then return false, 'already_searched' end
     if data.key_taken then return false, 'taken' end
-    if not Guard:CanSearchCompartment(vehicle, compartment) then return false, 'closed' end
+    if not Guard:CanSearchCompartment(source, vehNetId, vehicle, compartment) then return false, 'closed' end
 
     local ok, lockKey = Guard:TryVehicleLock(plate, 'search', source)
     if not ok then return false, 'busy' end
@@ -298,7 +298,10 @@ lib.callback.register('mm_carkeys:server:completeNpcSearch', function(source, to
         return false, 'escaped'
     end
 
-    if IsEntityDead(npc) or IsPedInAnyVehicle(npc, false) or not Guard:ValidateDistance(source, npc, Config.NPCSearch.MaxDistance) then
+    local npcStillNearby = Guard:ValidateDistance(source, npc, Config.NPCSearch.MaxDistance)
+    local npcStateOk, npcState = Guard:AwaitClientEntityState(source, data.npcNet, 'npcStatus')
+
+    if not npcStillNearby or not npcStateOk or type(npcState) ~= 'table' or npcState.isDead or npcState.inVehicle then
         state.key_location = 'none'
         state.key_taken = true
         syncEntityState(vehicle, state)

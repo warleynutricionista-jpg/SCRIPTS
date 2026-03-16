@@ -3,6 +3,7 @@ local Hotwire = require 'client.modules.hotwire'
 local Steal = require 'client.modules.steal'
 local LockPick = require 'client.modules.lockpick'
 local Utils = require 'client.modules.utils'
+local _ = require 'client.modules.entity_checks'
 
 function VehicleKeys:Init(plate)
     if plate then self.currentVehiclePlate = plate end

@@ -38,6 +38,86 @@ local myBoxZone = BoxZone:Create(vector3(1694.6, -1460.75, 112.92), 26.8, 15, {
     debugPoly = false
 })
 
+
+local function registerTargets()
+    exports.ox_target:addModel(props, {
+        {
+            name = 'md_refuel_tanker_pickup',
+            icon = 'fas fa-gas-pump',
+            label = 'Pegar bico',
+            distance = 2.0,
+            event = 'refuelTanker',
+            canInteract = function()
+                return not IsPedInAnyVehicle(PlayerPedId()) and not nozzleInHand and cooldown == 0
+            end,
+        },
+        {
+            name = 'md_refuel_tanker_return',
+            icon = 'fas fa-hand',
+            label = 'Retornar o bico',
+            distance = 2.0,
+            event = 'ReturnNozzle',
+            canInteract = function()
+                return nozzleInHand
+            end,
+        },
+    })
+
+    exports.ox_target:addModel(trailerModels, {
+        {
+            name = 'md_refuel_trailer_fill',
+            icon = 'fas fa-gas-pump',
+            label = 'Encher Caminhão de Combustível',
+            distance = 5.0,
+            event = 'FuelTruck',
+            canInteract = function()
+                return nozzleInHand and cooldown == 0 and truck == 1 and myBoxZone:isPointInside(GetEntityCoords(PlayerPedId()))
+            end,
+        },
+        {
+            name = 'md_refuel_station_pickup',
+            icon = 'fas fa-gas-pump',
+            label = 'Pegar bico',
+            distance = 5.0,
+            onSelect = function()
+                FreezeEntityPosition(trailerId, true)
+                nozzleInHand = true
+                TriggerEvent('pumpRefuel')
+            end,
+            canInteract = function()
+                return cooldown == 1 and not nozzleInHand
+            end,
+        },
+        {
+            name = 'md_refuel_station_return',
+            icon = 'fas fa-hand',
+            label = 'Retornar o bico',
+            distance = 5.0,
+            onSelect = function()
+                nozzleInHand = false
+                FreezeEntityPosition(trailerId, false)
+                TriggerEvent('ReturnNozzle')
+            end,
+            canInteract = function()
+                return cooldown == 1 and nozzleInHand and RefuelingStation == false
+            end,
+        },
+    })
+
+    exports.ox_target:addModel(refuelProp, {
+        {
+            name = 'md_refuel_station_deliver',
+            icon = 'fas fa-gas-pump',
+            label = 'Abastecer Posto de gasolina',
+            distance = 5.0,
+            event = 'refuelStation1',
+            canInteract = function()
+                return nozzleInHand and cooldown == 1
+            end,
+        },
+    })
+end
+
 --/////////////////////////////////////////////////////////////////////////////////////////////////--
 
 local function LoadAnimDict(dict)
@@ -460,29 +540,6 @@ function BringToTruck()
                     insideZone = true
                     if truck == 1 and cooldown == 0 then
                         QBCore.Functions.Notify('Vá abastecer o tanque!', 'success', 5000)
-                        if Config.Target == 'qb' then
-                            for _, model in ipairs(trailerModels) do
-                                local modelHash = tonumber(model)
-                                exports['qb-target']:AddTargetModel({modelHash}, {
-                                options = {
-                                {
-                                    type = "client",
-                                    event = "FuelTruck",
-                                    icon = "fas fa-gas-pump",
-                                    label = "Encher Caminhão de Combustível",
-                                    canInteract = function()
-                                        if nozzleInHand and cooldown == 0 then
-                                            return true
-                                        else
-                                            return false
-                                        end
-                                    end
-                                },
-                            },
-                            distance = 5.0,
-                            })
-                            end
-			            end
                     end
                     if Config.Debug == true then
                         print("O jogador entrou na zona da caixa")
@@ -580,55 +637,6 @@ function RefuelStation(location)
     refuelProp1 = CreateObject(refuelProp, location.x, location.y, location.z-1, true, false, false)
     FreezeEntityPosition(refuelProp1, true)
     SetEntityAsMissionEntity(refuelProp1, true, true)
-    if cooldown == 1 then
-        if Config.Target == 'qb' then
-            for _, model in ipairs(trailerModels) do
-                local modelHash = tonumber(model)
-                exports['qb-target']:AddTargetModel({modelHash}, {
-                    options = {
-                    {
-                        num = 1,
-                        event = "pumpRefuel",
-                        icon = "fas fa-gas-pump",
-                        label = "Pegar bico",
-                        action = function()
-                            FreezeEntityPosition(trailerId, true)
-                            nozzleInHand = true
-                            TriggerEvent('pumpRefuel')
-                        end,
-                        canInteract = function()
-                            if not nozzleInHand then
-                                return true
-                            else
-                                return false
-                            end
-                        end
-                    },
-                    {
-                        num = 2,
-                        type = "client",
-                        event = "ReturnNozzle",
-                        icon = "fas fa-hand",
-                        label = "Retornar o bico",
-                        action = function()
-                            nozzleInHand = false
-                            FreezeEntityPosition(trailerId, false)
-                            TriggerEvent('ReturnNozzle')
-                        end,
-                        canInteract = function()
-                            if nozzleInHand and RefuelingStation == false then
-                                return true
-                            else
-                                return false
-                            end
-                        end,
-                    },
-                },
-                distance = 5.0
-            })
-            end
-        end
-    end
 end
 
 --/////////////////////////////////////////////////////////////////////////////////////////////////--
@@ -722,25 +730,6 @@ function BringToStation()
     if Config.Debug == true then
         print("cooldown: "..cooldown)
     end
-    if Config.Target == 'qb' then
-        exports['qb-target']:AddTargetModel(refuelProp, {
-            options = {
-            {
-                event = "refuelStation1",
-                icon = "fas fa-gas-pump",
-                label = "Abastecer Posto de gasolina",
-                canInteract = function()
-                    if nozzleInHand and cooldown == 1 then
-                        return true
-                    else
-                        return false
-                    end
-                end
-            },
-        },
-        distance = 5.0,
-    })
-     end
 end
 
 --/////////////////////////////////////////////////////////////////////////////////////////////////--
@@ -807,37 +796,7 @@ end)
 --/////////////////////////////////////////////////////////////////////////////////////////////////--
 
 CreateThread(function()
-    if Config.Target == 'qb' then
-        exports['qb-target']:AddTargetModel(props, {
-            options = {
-                {
-                    num = 1,
-                    type = "client",
-                    event = "refuelTanker",
-                    icon = "fas fa-gas-pump",
-                    label = "Pegar bico",
-                    canInteract = function()
-                        if not IsPedInAnyVehicle(PlayerPedId()) and not nozzleInHand and cooldown == 0 then
-                            return true
-                        end
-                    end,
-                },
-                {
-                    num = 2,
-                    type = "client",
-                    event = "ReturnNozzle",
-                    icon = "fas fa-hand",
-                    label = "Retornar o bico",
-                    canInteract = function()
-                        if nozzleInHand then
-                            return true
-                        end
-                    end,
-                },
-            },
-            distance = 2.0
-        })
-    end
+    registerTargets()
 end)
 
 --/////////////////////////////////////////////////////////////////////////////////////////////////--

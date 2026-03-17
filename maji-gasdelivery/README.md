@@ -19,7 +19,7 @@ By reporting issues, you help improve the fuel delivery job for all players and 
 # DEPENDENCIES
 
 - qb-core
-- qb-target
+- ox_target
 
 Place this file inside your [standalone] folder and start the script. 
 

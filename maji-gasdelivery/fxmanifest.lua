@@ -20,5 +20,5 @@ server_script 'server/main.lua'
 
 dependencies {
     'qb-core',
-    'qb-target'
+    'ox_target'
 }

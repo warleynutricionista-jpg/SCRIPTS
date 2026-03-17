@@ -13,7 +13,7 @@ Config.Blip = {
     },
 }
 
-Config.Target = 'qb' -- REMOVED SUPPORT FOR OX
+Config.Target = 'ox'
 
 Config.UseMenu = true --- Set this to "true" if you like to use the menu to interact with the Boss 
 

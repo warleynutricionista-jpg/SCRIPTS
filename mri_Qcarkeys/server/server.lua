@@ -3,16 +3,30 @@ local Guard = require 'server.modules.action_guard'
 
 local VehicleList = {}
 local VehicleData = {}
+local SpawnedVehicles = {}
+local TempKeyCleanupRunning = false
 local getItemInfo = Shared.Inventory == 'qb' and function(item) return item.info end or function(item) return item.metadata end
 
+local function debugLog(message, ...)
+    Shared.DebugPrint(message, ...)
+end
+
 local function isValidPlate(plate)
-    if type(plate) ~= 'string' then return false end
-    if #plate == 0 or #plate > 10 then return false end
-    return plate:match('^[%w%s]+$') ~= nil
+    return Shared.GetPlateKey(plate) ~= nil
 end
 
 local function normPlate(plate)
-    return (plate or ''):gsub('%W', '')
+    return Shared.GetPlateKey(plate) or ''
+end
+
+local function getCitizenVehicleList(citizenid)
+    if not citizenid then return nil end
+    VehicleList[citizenid] = VehicleList[citizenid] or {
+        plates = {},
+        netIds = {},
+        meta = {}
+    }
+    return VehicleList[citizenid]
 end
 
 local function ensureVehicleData(plate)
@@ -30,7 +44,8 @@ local function ensureVehicleData(plate)
             electrical_failure_permanent = false,
             lockpick_in_progress = false,
             hotwire_in_progress = false,
-            vehicle_net = nil
+            vehicle_net = nil,
+            status = Shared.vehicleState.states.normal
         }
     end
     return VehicleData[plate]
@@ -63,65 +78,355 @@ local function syncEntityState(vehicle, data)
         ignition_damaged = data.ignition_damaged,
         electrical_failure_permanent = data.electrical_failure_permanent,
         lockpick_in_progress = data.lockpick_in_progress,
-        hotwire_in_progress = data.hotwire_in_progress
+        hotwire_in_progress = data.hotwire_in_progress,
+        vehicle_status = data.status
     })
 end
 
 local function getVehicleFromNetId(netId)
-    if type(netId) ~= 'number' then return 0 end
+    if type(netId) ~= 'number' or netId <= 0 then return 0 end
     local vehicle = NetworkGetEntityFromNetworkId(netId)
     if vehicle == 0 or not DoesEntityExist(vehicle) then return 0 end
     return vehicle
 end
 
-local function resolveVehicleAndState(netId)
+local function getIdentityFromNetId(netId, ownerSource)
     local vehicle = getVehicleFromNetId(netId)
-    if vehicle == 0 then return 0 end
-    local plate = normPlate(GetVehicleNumberPlateText(vehicle))
-    if not isValidPlate(plate) then return 0 end
-    local data = ensureVehicleData(plate)
+    if vehicle == 0 then return nil end
+    return Shared.GetVehicleIdentity(vehicle, ownerSource)
+end
+
+local function resolveVehicleReference(vehicleOrNetId, ownerSource)
+    if type(vehicleOrNetId) ~= 'number' or vehicleOrNetId <= 0 then return nil end
+
+    if NetworkDoesNetworkIdExist(vehicleOrNetId) then
+        local identity = getIdentityFromNetId(vehicleOrNetId, ownerSource)
+        if identity then return identity end
+    end
+
+    if DoesEntityExist(vehicleOrNetId) and IsEntityAVehicle(vehicleOrNetId) then
+        return Shared.GetVehicleIdentity(vehicleOrNetId, ownerSource)
+    end
+
+    return nil
+end
+
+local function resolveVehicleAndState(netId)
+    local identity = getIdentityFromNetId(netId)
+    if not identity or not identity.plateKey then return 0 end
+    local data = ensureVehicleData(identity.plateKey)
     if not data.key_location then
         data.key_location = pickKeyLocation()
     end
-    data.vehicle_net = netId
-    syncEntityState(vehicle, data)
-    return vehicle, plate, data
+    data.vehicle_net = identity.netId
+    syncEntityState(identity.entity, data)
+    return identity.entity, identity.plateKey, data
 end
 
-local function getDefaultVehicleState()
+local function buildTempKeyPayload(plate, netId, metadata)
+    metadata = metadata or {}
     return {
-        keyFound = false,
-        searched = { glovebox = false, trunk = false },
-        keyLocation = false,
-        status = Shared.vehicleState.states.normal,
-        hasIrreversibleDamage = false,
-        requiresMechanic = false,
-        assignedNpc = false,
-        npcSearched = false
+        plate = Shared.NormalizePlate(plate),
+        plateKey = normPlate(plate),
+        netId = type(netId) == 'number' and netId > 0 and netId or nil,
+        expiresAt = metadata.expiresAt,
+        category = metadata.category,
+        reason = metadata.reason,
+        temporary = metadata.temporary ~= false
     }
 end
 
-local function getVehicleState(plate)
-    plate = RemoveSpecialCharacter(plate)
-    VehicleStateByPlate[plate] = VehicleStateByPlate[plate] or getDefaultVehicleState()
-    return VehicleStateByPlate[plate], plate
+local function scheduleTempKeyCleanup()
+    if TempKeyCleanupRunning then return end
+    TempKeyCleanupRunning = true
+
+    CreateThread(function()
+        while TempKeyCleanupRunning do
+            local now = os.time()
+            local foundExpiringKey = false
+
+            for citizenid, data in pairs(VehicleList) do
+                for plate, meta in pairs(data.meta or {}) do
+                    if meta.expiresAt then
+                        foundExpiringKey = true
+                        if meta.expiresAt <= now then
+                            data.plates[plate] = nil
+                            data.meta[plate] = nil
+                            if meta.netId then
+                                data.netIds[meta.netId] = nil
+                            end
+                        end
+                    end
+                end
+
+                if not next(data.plates) and not next(data.netIds) then
+                    VehicleList[citizenid] = nil
+                end
+            end
+
+            if not foundExpiringKey then
+                TempKeyCleanupRunning = false
+                break
+            end
+
+            Wait(30000)
+        end
+    end)
 end
 
-function GiveTempKeys(id, plate)
+local function setTempKeyForPlayer(id, plate, netId, metadata)
     local citizenid = Bridge:GetPlayerCitizenId(id)
-    if not citizenid then return end
-    if not VehicleList[citizenid] then VehicleList[citizenid] = {} end
-    plate = normPlate(plate)
-    if plate == '' then return end
+    if not citizenid then return false end
 
-    VehicleList[citizenid][plate] = true
-    local ndata = {
-        title = 'Recebido',
-        description = 'Você recebeu a chave temporária para o veículo',
-        type = 'success'
+    local list = getCitizenVehicleList(citizenid)
+    local payload = buildTempKeyPayload(plate, netId, metadata)
+    local hasIdentifier = false
+
+    if payload.plateKey ~= '' then
+        list.plates[payload.plateKey] = true
+        list.meta[payload.plateKey] = payload
+        hasIdentifier = true
+    end
+
+    if payload.netId then
+        list.netIds[payload.netId] = true
+        hasIdentifier = true
+    end
+
+    if not hasIdentifier then return false end
+
+    if Shared.tempKeys.autoExpire and not payload.expiresAt then
+        payload.expiresAt = os.time() + math.floor((Shared.tempKeys.expire or 30) * 60)
+        if payload.plateKey ~= '' then
+            list.meta[payload.plateKey] = payload
+        end
+        scheduleTempKeyCleanup()
+    end
+
+    debugLog('temporary key granted src=%s plate=%s netId=%s category=%s reason=%s', id, payload.plateKey ~= '' and payload.plateKey or 'nil', payload.netId or 'nil', payload.category or 'default', payload.reason or 'none')
+    TriggerClientEvent('mm_carkeys:client:addtempkeys', id, payload)
+    return true
+end
+
+function GiveTempKeys(id, vehicleOrPlate, metadata)
+    if not Shared.tempKeys.enabled then return false end
+
+    metadata = metadata or {}
+    local plate, netId = vehicleOrPlate, metadata.netId
+    if type(vehicleOrPlate) == 'number' then
+        local identity = resolveVehicleReference(vehicleOrPlate, id)
+        if not identity then return false end
+        plate = identity.plate
+        netId = identity.netId
+    end
+
+    local granted = setTempKeyForPlayer(id, plate, netId, metadata)
+    if granted then
+        TriggerClientEvent('ox_lib:notify', id, {
+            title = 'Recebido',
+            description = 'Você recebeu a chave temporária para o veículo',
+            type = 'success'
+        })
+    end
+
+    return granted
+end
+
+local function removeTempKeyForPlayer(id, vehicleOrPlate, metadata)
+    local citizenid = Bridge:GetPlayerCitizenId(id)
+    if not citizenid then return false end
+    local list = VehicleList[citizenid]
+    if not list then return false end
+
+    metadata = metadata or {}
+    local plate = type(vehicleOrPlate) == 'number' and nil or vehicleOrPlate
+    local netId = metadata.netId
+    if type(vehicleOrPlate) == 'number' then
+        local identity = resolveVehicleReference(vehicleOrPlate, id)
+        plate = identity and identity.plate or nil
+        netId = identity and identity.netId or vehicleOrPlate
+    end
+
+    local plateKey = normPlate(plate)
+    local removed = false
+
+    if plateKey ~= '' then
+        removed = list.plates[plateKey] ~= nil or removed
+        list.plates[plateKey] = nil
+        local meta = list.meta[plateKey]
+        if meta and meta.netId then
+            list.netIds[meta.netId] = nil
+        end
+        list.meta[plateKey] = nil
+    end
+
+    if type(netId) == 'number' and netId > 0 and list.netIds[netId] then
+        removed = true
+        list.netIds[netId] = nil
+        for storedPlate, meta in pairs(list.meta) do
+            if meta.netId == netId then
+                list.meta[storedPlate] = nil
+                list.plates[storedPlate] = nil
+            end
+        end
+    end
+
+    if removed then
+        debugLog('temporary key removed src=%s plate=%s netId=%s', id, plateKey ~= '' and plateKey or 'nil', netId or 'nil')
+        TriggerClientEvent('mm_carkeys:client:removetempkeys', id, buildTempKeyPayload(plate, netId, metadata))
+    end
+
+    return removed
+end
+
+function RemoveTempKeys(id, vehicleOrPlate, metadata)
+    return removeTempKeyForPlayer(id, vehicleOrPlate, metadata)
+end
+
+local function givePermanentKeys(id, vehicleOrPlate, metadata)
+    metadata = metadata or {}
+    local plate = vehicleOrPlate
+    if type(vehicleOrPlate) == 'number' then
+        local identity = resolveVehicleReference(vehicleOrPlate, id)
+        if not identity or not identity.plateKey then return false end
+        plate = identity.plate
+    end
+
+    local plateKey = normPlate(plate)
+    if plateKey == '' then return false end
+
+    local Player = Bridge:GetPlayer(id)
+    if not Player then return false end
+
+    return Bridge:AddItem(id, 'vehiclekey', {
+        label = ('CHAVE-%s'):format(plateKey),
+        plate = plateKey
+    })
+end
+
+local function removePermanentKeys(id, plate)
+    local plateKey = normPlate(plate)
+    if plateKey == '' then return false end
+    local keys = Bridge:GetPlayerItemsByName(id, 'vehiclekey')
+    for _, v in pairs(keys) do
+        local info = getItemInfo(v)
+        if info and normPlate(info.plate) == plateKey then
+            Bridge:RemoveItem(id, 'vehiclekey', v.slot)
+            return true
+        end
+    end
+    return false
+end
+
+local function hasPermanentKeys(id, vehicleOrPlate)
+    local plate = vehicleOrPlate
+    if type(vehicleOrPlate) == 'number' then
+        local identity = resolveVehicleReference(vehicleOrPlate, id)
+        if not identity or not identity.plateKey then return false end
+        plate = identity.plate
+    end
+    return lib.callback.await('mm_carkeys:client:havekey', id, 'perma', plate)
+end
+
+local function hasAnyKeys(id, vehicleOrPlate, metadata)
+    metadata = metadata or {}
+    local plate = type(vehicleOrPlate) == 'number' and nil or vehicleOrPlate
+    local netId = metadata.netId
+    if type(vehicleOrPlate) == 'number' then
+        local identity = resolveVehicleReference(vehicleOrPlate, id)
+        plate = identity and identity.plate or nil
+        netId = identity and identity.netId or vehicleOrPlate
+    end
+
+    return lib.callback.await('mm_carkeys:client:havekey', id, 'temp', { plate = plate, netId = netId })
+        or hasPermanentKeys(id, vehicleOrPlate)
+end
+
+local function registerSpawnedVehicle(ownerSource, vehicleOrNetId, options)
+    options = options or {}
+    if not ownerSource or ownerSource <= 0 then return false, 'invalid_source' end
+
+    local identity = resolveVehicleReference(vehicleOrNetId, ownerSource)
+    if not identity or not identity.netId then return false, 'invalid_vehicle' end
+
+    local netId = identity.netId
+    local vehicle = identity.entity
+
+    local entityOwner = NetworkGetEntityOwner(vehicle)
+    local ped = GetPlayerPed(ownerSource)
+    local driver = ped ~= 0 and GetPedInVehicleSeat(vehicle, -1) or 0
+    if entityOwner ~= -1 and entityOwner ~= ownerSource and driver ~= ped then
+        debugLog('spawn registration denied src=%s netId=%s owner=%s driverMatch=%s', ownerSource, netId, entityOwner, driver == ped)
+        return false, 'ownership_mismatch'
+    end
+
+    SpawnedVehicles[netId] = {
+        source = ownerSource,
+        category = options.category or 'generic',
+        temporary = options.temporary ~= false,
+        createdAt = os.time(),
+        plate = identity.plate,
+        plateKey = identity.plateKey,
+        model = identity.model,
+        expiresAt = options.expiresAt,
+        reason = options.reason,
+        cleanupOnDelete = options.cleanupOnDelete ~= false,
     }
-    TriggerClientEvent('ox_lib:notify', id, ndata)
-    TriggerClientEvent('mm_carkeys:client:addtempkeys', id, plate)
+
+    local vehicleData = identity.plateKey and ensureVehicleData(identity.plateKey) or nil
+    if vehicleData then
+        vehicleData.vehicle_net = identity.netId
+        vehicleData.has_key = true
+        syncEntityState(vehicle, vehicleData)
+    end
+
+    local shouldTemp = options.temporary ~= false
+    if shouldTemp then
+        local granted = GiveTempKeys(ownerSource, identity.plate or identity.netId, {
+            netId = identity.netId,
+            expiresAt = options.expiresAt,
+            category = options.category,
+            reason = options.reason or 'spawn_registration',
+            temporary = true
+        })
+        if not granted and identity.netId then
+            local fallbackGranted = GiveTempKeys(ownerSource, identity.netId, {
+                netId = identity.netId,
+                expiresAt = options.expiresAt,
+                category = options.category,
+                reason = options.reason or 'spawn_registration_pending_plate',
+                temporary = true
+            })
+            if not fallbackGranted then
+                return false, 'grant_failed'
+            end
+        end
+    else
+        if not givePermanentKeys(ownerSource, identity.plate) then
+            return false, 'grant_failed'
+        end
+    end
+
+    debugLog('spawn registered src=%s netId=%s plate=%s category=%s temporary=%s', ownerSource, identity.netId, identity.plateKey or 'nil', options.category or 'generic', shouldTemp)
+    return true, identity
+end
+
+local function assignKeysOnServiceSpawn(ownerSource, vehicleOrNetId, options)
+    if not Config.GiveTempKeysToServiceVehicles then return false, 'disabled' end
+    options = options or {}
+    options.category = 'service'
+    options.temporary = options.temporary ~= false
+    options.reason = options.reason or 'service_spawn'
+    return registerSpawnedVehicle(ownerSource, vehicleOrNetId, options)
+end
+
+local function assignKeysOnAdminSpawn(ownerSource, vehicleOrNetId, options)
+    if not Config.GiveKeysToAdminSpawnedVehicles then return false, 'disabled' end
+    options = options or {}
+    options.category = 'admin'
+    options.temporary = options.temporary ~= false
+    options.reason = options.reason or 'admin_spawn'
+    return registerSpawnedVehicle(ownerSource, vehicleOrNetId, options)
 end
 
 local function grantVehicleKey(source, vehicle, plate, data)
@@ -129,24 +434,14 @@ local function grantVehicleKey(source, vehicle, plate, data)
     data.key_taken = true
     data.has_key = true
     syncEntityState(vehicle, data)
-    Guard:Debug('key granted src=%s plate=%s', source, plate)
-    GiveTempKeys(source, plate)
+    debugLog('key granted src=%s plate=%s', source, plate)
+    GiveTempKeys(source, plate, { netId = NetworkGetNetworkIdFromEntity(vehicle), reason = 'script_action', category = 'interaction' })
     return true
-end
-
-function RemoveTempKeys(id, plate)
-    local citizenid = Bridge:GetPlayerCitizenId(id)
-    if not citizenid then return end
-    plate = normPlate(plate)
-    if VehicleList[citizenid] and VehicleList[citizenid][plate] then
-        VehicleList[citizenid][plate] = nil
-    end
-    TriggerClientEvent('mm_carkeys:client:removetempkeys', id, plate)
 end
 
 lib.callback.register('mm_carkeys:server:getvehiclekeys', function(source)
     local citizenid = Bridge:GetPlayerCitizenId(source)
-    return VehicleList[citizenid] or {}
+    return getCitizenVehicleList(citizenid) or { plates = {}, netIds = {}, meta = {} }
 end)
 
 lib.callback.register('mm_carkeys:server:getVehicleState', function(_, plate)
@@ -510,13 +805,62 @@ end)
 RegisterNetEvent('mm_carkeys:server:acquiretempvehiclekeys', function(plate)
     local src = source
     if not isValidPlate(plate) then return end
-    GiveTempKeys(src, plate)
+    GiveTempKeys(src, plate, { reason = 'compat_temp', category = 'compat' })
 end)
 
 RegisterNetEvent('mm_carkeys:server:removetempvehiclekeys', function(plate)
     local src = source
     if not isValidPlate(plate) then return end
     RemoveTempKeys(src, plate)
+end)
+
+RegisterNetEvent('mm_carkeys:server:giveTemporaryKeys', function(payload)
+    local src = source
+    if type(payload) ~= 'table' then return end
+    GiveTempKeys(src, payload.plate or payload.netId, payload)
+end)
+
+RegisterNetEvent('mm_carkeys:server:givePermanentKeys', function(payload)
+    local src = source
+    if type(payload) ~= 'table' then return end
+    givePermanentKeys(src, payload.plate or payload.netId, payload)
+end)
+
+RegisterNetEvent('mm_carkeys:server:removeKeys', function(payload)
+    local src = source
+    if type(payload) ~= 'table' then return end
+    RemoveTempKeys(src, payload.plate or payload.netId, payload)
+    if payload.plate then
+        removePermanentKeys(src, payload.plate)
+    end
+end)
+
+RegisterNetEvent('mm_carkeys:server:registerSpawnedVehicle', function(netId, options)
+    local src = source
+    if type(netId) ~= 'number' then return end
+    registerSpawnedVehicle(src, netId, options or {})
+end)
+
+RegisterNetEvent('mm_carkeys:server:claimFallbackSpawnKeys', function(netId, options)
+    local src = source
+    if not Config.AdminSpawnFallback or type(netId) ~= 'number' then return end
+    options = options or {}
+    options.category = options.category or 'admin'
+    options.temporary = true
+    options.reason = options.reason or 'fallback_spawn'
+    registerSpawnedVehicle(src, netId, options)
+end)
+
+RegisterNetEvent('mm_carkeys:server:assignKeysOnServiceSpawn', function(netId, options)
+    local src = source
+    if type(netId) ~= 'number' then return end
+    assignKeysOnServiceSpawn(src, netId, options or {})
+end)
+
+RegisterNetEvent('mm_carkeys:server:assignKeysOnAdminSpawn', function(netId, options)
+    local src = source
+    if type(netId) ~= 'number' then return end
+    assignKeysOnAdminSpawn(src, netId, options or {})
 end)
 
 RegisterNetEvent('mm_carkeys:server:removelockpick', function(item)
@@ -527,32 +871,26 @@ end)
 RegisterNetEvent('mm_carkeys:server:acquirevehiclekeys', function(plate)
     local src = source
     if not isValidPlate(plate) then return end
-    local Player = Bridge:GetPlayer(src)
-    if Player then
-        Bridge:AddItem(src, 'vehiclekey', { label = 'CHAVE-' .. plate, plate = plate })
-    end
+    givePermanentKeys(src, plate)
 end)
 
 RegisterNetEvent('qb-vehiclekeys:server:AcquireVehicleKeys', function(plate)
     local src = source
     if not isValidPlate(plate) then return end
-    local Player = Bridge:GetPlayer(src)
-    if Player then
-        Bridge:AddItem(src, 'vehiclekey', { label = 'Chaves -' .. plate, plate = plate })
-    end
+    givePermanentKeys(src, plate)
 end)
 
 RegisterNetEvent('mm_carkeys:server:removevehiclekeys', function(plate)
     local src = source
     if not isValidPlate(plate) then return end
-    local keys = Bridge:GetPlayerItemsByName(src, 'vehiclekey')
-    for _, v in pairs(keys) do
-        local info = getItemInfo(v)
-        if info and info.plate == plate then
-            Bridge:RemoveItem(src, 'vehiclekey', v.slot)
-            break
-        end
-    end
+    removePermanentKeys(src, plate)
+end)
+
+RegisterNetEvent('mm_carkeys:server:setVehicleStatus', function(plate, status)
+    if not isValidPlate(plate) then return end
+    local data = ensureVehicleData(plate)
+    if not data then return end
+    data.status = status or Shared.vehicleState.states.normal
 end)
 
 RegisterNetEvent('mm_carkeys:server:stackkeys', function()
@@ -563,16 +901,18 @@ RegisterNetEvent('mm_carkeys:server:stackkeys', function()
     for _, v in pairs(keys) do
         local info = getItemInfo(v)
         if info and info.plate then
-            plates[#plates + 1] = { plate = info.plate, label = info.label }
-            platesList[#platesList + 1] = info.plate
+            local plateKey = normPlate(info.plate)
+            plates[#plates + 1] = { plate = plateKey, label = info.label }
+            platesList[#platesList + 1] = plateKey
             Bridge:RemoveItem(src, 'vehiclekey', v.slot)
         end
     end
     if bagFound then
         local info = getItemInfo(bagFound)
         for _, v in pairs(info.plates or {}) do
-            plates[#plates + 1] = { plate = v.plate, label = v.label }
-            platesList[#platesList + 1] = v.plate
+            local plateKey = normPlate(v.plate)
+            plates[#plates + 1] = { plate = plateKey, label = v.label }
+            platesList[#platesList + 1] = plateKey
         end
         Bridge:RemoveItem(src, 'keybag', bagFound.slot)
     end
@@ -588,16 +928,42 @@ RegisterNetEvent('mm_carkeys:server:unstackkeys', function()
     Bridge:RemoveItem(src, 'keybag', bag.slot)
     local itemInfo = getItemInfo(bag)
     for _, v in pairs(itemInfo.plates or {}) do
-        Bridge:AddItem(src, 'vehiclekey', { label = v.label, plate = v.plate })
+        Bridge:AddItem(src, 'vehiclekey', { label = v.label, plate = normPlate(v.plate) })
     end
 end)
 
 exports('GiveTempKeys', GiveTempKeys)
+exports('GiveTemporaryKeys', function(src, vehicleOrPlate, metadata)
+    return GiveTempKeys(src, vehicleOrPlate, metadata)
+end)
+exports('GivePermanentKeys', function(src, vehicleOrPlate, metadata)
+    return givePermanentKeys(src, vehicleOrPlate, metadata)
+end)
 exports('RemoveTempKeys', RemoveTempKeys)
+exports('RemoveKeys', function(src, vehicleOrPlate, metadata)
+    local removedTemp = RemoveTempKeys(src, vehicleOrPlate, metadata)
+    local removedPermanent = false
+    if type(vehicleOrPlate) == 'string' then
+        removedPermanent = removePermanentKeys(src, vehicleOrPlate)
+    end
+    return removedTemp or removedPermanent
+end)
+exports('HasKeys', function(src, vehicleOrPlate, metadata)
+    return hasAnyKeys(src, vehicleOrPlate, metadata)
+end)
+exports('RegisterSpawnedVehicle', function(src, vehicleOrNetId, options)
+    return registerSpawnedVehicle(src, vehicleOrNetId, options)
+end)
+exports('AssignKeysOnServiceSpawn', function(src, vehicleOrNetId, options)
+    return assignKeysOnServiceSpawn(src, vehicleOrNetId, options)
+end)
+exports('AssignKeysOnAdminSpawn', function(src, vehicleOrNetId, options)
+    return assignKeysOnAdminSpawn(src, vehicleOrNetId, options)
+end)
 
-exports('GiveKeyItem', function(src, plate, netId)
-    if not plate or not netId then return end
-    TriggerClientEvent('mm_carkeys:client:setplayerkey', src, plate, netId)
+exports('GiveKeyItem', function(src, plate)
+    if not plate then return end
+    TriggerClientEvent('mm_carkeys:client:setplayerkey', src, plate)
 end)
 
 exports('RemoveKeyItem', function(src, plate)
@@ -605,14 +971,33 @@ exports('RemoveKeyItem', function(src, plate)
     TriggerClientEvent('mm_carkeys:client:removeplayerkey', src, plate)
 end)
 
-exports('HaveTemporaryKey', function(src, plate)
-    if not plate then return end
-    return lib.callback.await('mm_carkeys:client:havekey', src, 'temp', plate)
+exports('HaveTemporaryKey', function(src, plate, netId)
+    if not plate and not netId then return false end
+    return lib.callback.await('mm_carkeys:client:havekey', src, 'temp', { plate = plate, netId = netId })
 end)
 
 exports('HavePermanentKey', function(src, plate)
-    if not plate then return end
+    if not plate then return false end
     return lib.callback.await('mm_carkeys:client:havekey', src, 'perma', plate)
+end)
+
+AddEventHandler('entityRemoved', function(entity)
+    if entity == 0 or not IsEntityAVehicle(entity) then return end
+    local netId = NetworkGetNetworkIdFromEntity(entity)
+    if not netId or netId <= 0 then return end
+
+    local record = SpawnedVehicles[netId]
+    if not record then return end
+
+    if record.cleanupOnDelete and record.source then
+        RemoveTempKeys(record.source, record.plate, { netId = netId })
+    end
+
+    SpawnedVehicles[netId] = nil
+    if record.plateKey and VehicleData[record.plateKey] then
+        VehicleData[record.plateKey].lockpick_in_progress = false
+        VehicleData[record.plateKey].hotwire_in_progress = false
+    end
 end)
 
 AddEventHandler('playerDropped', function()
@@ -621,11 +1006,17 @@ AddEventHandler('playerDropped', function()
     if citizenid and VehicleList[citizenid] then
         VehicleList[citizenid] = nil
     end
+
+    for netId, data in pairs(SpawnedVehicles) do
+        if data.source == src then
+            SpawnedVehicles[netId] = nil
+        end
+    end
 end)
 
 AddEventHandler('onResourceStop', function(resource)
     if resource ~= GetCurrentResourceName() then return end
-    for plate, data in pairs(VehicleData) do
+    for _, data in pairs(VehicleData) do
         data.lockpick_in_progress = false
         data.hotwire_in_progress = false
     end

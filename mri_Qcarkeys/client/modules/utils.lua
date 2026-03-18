@@ -15,18 +15,29 @@ end
 function Utils:GetPedsInVehicle(vehicle)
     if not vehicle then return end
     local otherPeds = {}
-    for seat=-1,GetVehicleModelNumberOfSeats(GetEntityModel(vehicle)) - 2 do
+    for seat = -1, GetVehicleModelNumberOfSeats(GetEntityModel(vehicle)) - 2 do
         local pedInSeat = GetPedInVehicleSeat(vehicle, seat)
         if not IsPedAPlayer(pedInSeat) and pedInSeat ~= 0 then
-            otherPeds[#otherPeds+1] = pedInSeat
+            otherPeds[#otherPeds + 1] = pedInSeat
         end
     end
     return otherPeds
 end
 
+function Utils:NormalizePlate(plate)
+    return Shared.NormalizePlate(plate)
+end
+
+function Utils:GetPlateKey(plate)
+    return Shared.GetPlateKey(plate) or 'undefined'
+end
+
 function Utils:RemoveSpecialCharacter(txt)
-    if not txt then return 'undefined' end
-    return txt:gsub("%W", "")
+    return self:GetPlateKey(txt)
+end
+
+function Utils:GetVehicleIdentity(vehicle)
+    return Shared.GetVehicleIdentity(vehicle)
 end
 
 return Utils

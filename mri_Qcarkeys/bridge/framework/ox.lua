@@ -1,12 +1,13 @@
 if Shared.Framework == 'ox' then
     local KeyManagement = require 'client.modules.keys'
     local VehicleKeys = require 'client.interface'
+    local Utils = require 'client.modules.utils'
 
     local function setupData()
         VehicleKeys.currentVehicle = cache.vehicle and cache.vehicle or 0
         if cache.vehicle then
             VehicleKeys.isInDrivingSeat = GetPedInVehicleSeat(cache.vehicle, -1) == cache.ped
-            VehicleKeys.currentVehiclePlate = GetVehicleNumberPlateText(cache.vehicle)
+            VehicleKeys.currentVehiclePlate = Utils:GetPlateKey(GetVehicleNumberPlateText(cache.vehicle))
         end
     end
 
@@ -14,6 +15,7 @@ if Shared.Framework == 'ox' then
         KeyManagement:SetVehicleKeys()
         VehicleKeys:Thread()
         VehicleKeys:Init()
+        KeyManagement:GetKeys()
     end)
 
     AddEventHandler('onResourceStart', function(resource)
@@ -22,6 +24,7 @@ if Shared.Framework == 'ox' then
             KeyManagement:SetVehicleKeys()
             VehicleKeys:Thread()
             VehicleKeys:Init()
+            KeyManagement:GetKeys()
         end
     end)
 

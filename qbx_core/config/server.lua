@@ -116,6 +116,14 @@ return {
     },
 
     giveVehicleKeys = function(src, plate, vehicle)
+        if GetResourceState('mri_Qcarkeys') == 'started' then
+            return exports.mri_Qcarkeys:AssignKeysOnAdminSpawn(src, vehicle, {
+                category = 'admin',
+                temporary = true,
+                reason = 'qbx_core_admin_command'
+            })
+        end
+
         return exports.qbx_vehiclekeys:GiveKeys(src, vehicle)
     end,
 

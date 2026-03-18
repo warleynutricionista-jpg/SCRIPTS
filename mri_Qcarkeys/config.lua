@@ -1,6 +1,12 @@
 Config = Config or {}
 
 Config.Debug = false
+Config.TempKeysEnabled = true
+Config.TempKeyAutoExpire = true
+Config.TempKeyExpireMinutes = 30
+Config.GiveTempKeysToServiceVehicles = true
+Config.GiveKeysToAdminSpawnedVehicles = true
+Config.AdminSpawnFallback = true
 
 Config.SearchKey = {
     Enabled = true,

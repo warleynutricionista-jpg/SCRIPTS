@@ -2,8 +2,10 @@ local cfg = Config or {}
 
 Shared = {
     debug = {
+        enabled = cfg.Debug or false,
         ignition = cfg.Debug or false,
-        hotwire = cfg.Debug or false
+        hotwire = cfg.Debug or false,
+        vehicleKeys = cfg.Debug or false,
     },
     text = cfg.Locale or {},
     ignition = {
@@ -81,6 +83,20 @@ Shared = {
     },
     searchKey = cfg.SearchKey or {},
     npcSearch = cfg.NPCSearch or {},
+    tempKeys = {
+        enabled = cfg.TempKeysEnabled ~= false,
+        expire = cfg.TempKeyExpireMinutes and cfg.TempKeyExpireMinutes > 0 and cfg.TempKeyExpireMinutes or 30,
+        autoExpire = cfg.TempKeyAutoExpire ~= false,
+        serviceEnabled = cfg.GiveTempKeysToServiceVehicles ~= false,
+        adminEnabled = cfg.GiveKeysToAdminSpawnedVehicles ~= false,
+        adminFallback = cfg.AdminSpawnFallback ~= false,
+    },
+    vehicleState = {
+        states = {
+            normal = 'normal',
+            breached = 'breached'
+        }
+    },
     BlackListedWeapon = {
         'WEAPON_UNARMED', 'WEAPON_Knife', 'WEAPON_Nightstick', 'WEAPON_HAMMER', 'WEAPON_Bat',
         'WEAPON_Crowbar', 'WEAPON_Golfclub', 'WEAPON_Bottle', 'WEAPON_Dagger', 'WEAPON_Hatchet',
@@ -90,6 +106,44 @@ Shared = {
         'WEAPON_PetrolCan', 'WEAPON_Flare', 'WEAPON_Ball', 'WEAPON_Snowball', 'WEAPON_SmokeGrenade'
     }
 }
+
+function Shared.NormalizePlate(plate)
+    if type(plate) ~= 'string' then return nil end
+    local normalized = plate:upper():gsub('^%s+', ''):gsub('%s+$', ''):gsub('%s+', ' ')
+    if normalized == '' then return nil end
+    return normalized
+end
+
+function Shared.GetPlateKey(plate)
+    local normalized = Shared.NormalizePlate(plate)
+    if not normalized then return nil end
+    local plateKey = normalized:gsub('%W', '')
+    if plateKey == '' then return nil end
+    return plateKey
+end
+
+function Shared.GetVehicleIdentity(vehicle, ownerSource)
+    if not vehicle or vehicle == 0 or not DoesEntityExist(vehicle) then return nil end
+
+    local plate = Shared.NormalizePlate(GetVehicleNumberPlateText(vehicle))
+    local plateKey = Shared.GetPlateKey(plate)
+    local netId = NetworkGetNetworkIdFromEntity(vehicle)
+
+    return {
+        entity = vehicle,
+        netId = netId > 0 and netId or nil,
+        plate = plate,
+        plateKey = plateKey,
+        model = GetEntityModel(vehicle),
+        ownerSource = ownerSource
+    }
+end
+
+function Shared.DebugPrint(message, ...)
+    if not Shared.debug.enabled then return end
+    local formatted = select('#', ...) > 0 and message:format(...) or message
+    print(('[mri_Qcarkeys] %s'):format(formatted))
+end
 
 Shared.dispatch = { event = Shared.alert.dispatchEvent }
 Shared.luxuryClasses = Shared.alert.silentClasses

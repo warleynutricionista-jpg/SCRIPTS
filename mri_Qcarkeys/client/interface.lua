@@ -1,6 +1,11 @@
 local VehicleKeys = {
     playerKeys = {},
-    playerTempKeys = {},
+    playerTempKeys = {
+        plates = {},
+        netIds = {},
+        meta = {}
+    },
+    pendingSpawnClaims = {},
     AlertSend = false,
     isInDrivingSeat = false,
     currentVehicle = 0,

@@ -19,6 +19,7 @@ if Shared.Framework == 'esx' then
         KeyManagement:SetVehicleKeys()
         VehicleKeys:Thread()
         VehicleKeys:Init()
+        KeyManagement:GetKeys()
     end)
 
     AddEventHandler('onResourceStart', function(resource)

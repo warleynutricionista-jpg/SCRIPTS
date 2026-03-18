@@ -13,6 +13,15 @@ local randomLocation = config.characters.locations[math.random(1, #config.charac
 local nationalities = {}
 local pendingCharacterCreationData = nil
 
+local function getCharacterMenuImageURL()
+    local imageURL = config.characters and config.characters.imageURL or ''
+    if type(imageURL) ~= 'string' then
+        return ''
+    end
+
+    return imageURL:gsub('^%s+', ''):gsub('%s+$', '')
+end
+
 -- Lista de peds aleatórios para a tela de seleção
 local randomPeds = {
     {
@@ -698,10 +707,11 @@ local function chooseCharacter()
         end
     end
 
-    -- Monta o título do menu com ou sem logo, sem quebrar se imageURL estiver nil
+    -- Sanitiza o logo do multichar para nunca concatenar/formatar um valor nil.
     local menuTitle = locale('info.multichar_title')
-    if config.characters.imageURL and config.characters.imageURL ~= '' then
-        menuTitle = ('![logo](%s) %s'):format(config.characters.imageURL, menuTitle)
+    local imageURL = getCharacterMenuImageURL()
+    if imageURL ~= '' then
+        menuTitle = ('![logo](%s) %s'):format(imageURL, menuTitle)
     end
 
     lib.registerContext({

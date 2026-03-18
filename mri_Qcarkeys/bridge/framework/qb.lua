@@ -30,6 +30,7 @@ if Shared.Framework == 'qb' then
             KeyManagement:SetVehicleKeys()
             VehicleKeys:Thread()
             VehicleKeys:Init()
+            KeyManagement:GetKeys()
         end
     end)
 

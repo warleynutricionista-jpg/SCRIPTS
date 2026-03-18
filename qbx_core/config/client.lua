@@ -8,6 +8,7 @@ return {
         useExternalCharacters = false, -- Whether you have an external character management resource. (If true, disables the character management inside the core)
         enableDeleteButton = true, -- Whether players should be able to delete characters themselves.
         startingApartment = true, -- If set to false, skips apartment choice in the beginning (requires qbx_spawn if true)
+        imageURL = '', -- Optional logo shown in the multichar title; keep empty to disable safely.
 
         dateFormat = 'YYYY-MM-DD',
         dateMin = '1900-01-01', -- Has to be in the same format as the dateFormat config

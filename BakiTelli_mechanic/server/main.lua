@@ -265,6 +265,14 @@ lib.callback.register('bakitelli_mechanic:server:spawnServiceVehicle', function(
     State.serviceVehicles[source] = netId
     setCooldown(source, 'service_vehicle', Config.Cooldowns.serviceVehicle)
 
+    if GetResourceState('mri_Qcarkeys') == 'started' then
+        exports.mri_Qcarkeys:AssignKeysOnServiceSpawn(source, netId, {
+            category = 'service',
+            temporary = true,
+            reason = 'bakitelli_service_vehicle'
+        })
+    end
+
     return true, netId
 end)
 

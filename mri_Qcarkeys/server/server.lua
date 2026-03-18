@@ -11,6 +11,19 @@ local function debugLog(message, ...)
     Shared.DebugPrint(message, ...)
 end
 
+local function isValidVehicleEntity(entity)
+    if type(entity) ~= 'number' or entity <= 0 then return false end
+    if not DoesEntityExist(entity) then return false end
+
+    local entityType = GetEntityType(entity)
+    if entityType ~= 2 then
+        debugLog('invalid vehicle entity reference=%s entityType=%s', entity, entityType or 'nil')
+        return false
+    end
+
+    return true
+end
+
 local function isValidPlate(plate)
     return Shared.GetPlateKey(plate) ~= nil
 end
@@ -86,7 +99,7 @@ end
 local function getVehicleFromNetId(netId)
     if type(netId) ~= 'number' or netId <= 0 then return 0 end
     local vehicle = NetworkGetEntityFromNetworkId(netId)
-    if vehicle == 0 or not DoesEntityExist(vehicle) then return 0 end
+    if not isValidVehicleEntity(vehicle) then return 0 end
     return vehicle
 end
 
@@ -104,7 +117,7 @@ local function resolveVehicleReference(vehicleOrNetId, ownerSource)
         if identity then return identity end
     end
 
-    if DoesEntityExist(vehicleOrNetId) and IsEntityAVehicle(vehicleOrNetId) then
+    if isValidVehicleEntity(vehicleOrNetId) then
         return Shared.GetVehicleIdentity(vehicleOrNetId, ownerSource)
     end
 
@@ -982,7 +995,7 @@ exports('HavePermanentKey', function(src, plate)
 end)
 
 AddEventHandler('entityRemoved', function(entity)
-    if entity == 0 or not IsEntityAVehicle(entity) then return end
+    if not isValidVehicleEntity(entity) then return end
     local netId = NetworkGetNetworkIdFromEntity(entity)
     if not netId or netId <= 0 then return end
 
